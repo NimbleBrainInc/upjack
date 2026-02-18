@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+workspace/
+.venv/
+README.md
+Makefile
+scripts/
+*.mcpb

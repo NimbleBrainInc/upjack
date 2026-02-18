@@ -1,0 +1,75 @@
+{
+  "manifest_version": "0.4",
+  "name": "@nimblebraininc/research-assistant",
+  "version": "1.0.0",
+  "title": "Research Assistant",
+  "description": "AI-native research management for topics, sources, notes, and report synthesis",
+  "server": {
+    "type": "python",
+    "entry_point": "server",
+    "mcp_config": {
+      "command": "python",
+      "args": ["server.py"]
+    }
+  },
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "upjack_version": "0.1",
+      "namespace": "apps/research",
+      "display": {
+        "name": "Research Assistant",
+        "icon": "\ud83d\udd2c",
+        "category": "research"
+      },
+      "entities": [
+        {
+          "name": "topic",
+          "plural": "topics",
+          "schema": "schemas/topic.schema.json",
+          "prefix": "top",
+          "index": true
+        },
+        {
+          "name": "source",
+          "plural": "sources",
+          "schema": "schemas/source.schema.json",
+          "prefix": "src",
+          "index": true
+        },
+        {
+          "name": "note",
+          "plural": "notes",
+          "schema": "schemas/note.schema.json",
+          "prefix": "nt",
+          "index": true
+        },
+        {
+          "name": "report",
+          "plural": "reports",
+          "schema": "schemas/report.schema.json",
+          "prefix": "rpt",
+          "index": true
+        }
+      ],
+      "skills": [
+        {
+          "source": "bundled",
+          "path": "skills/research-methodology/SKILL.md"
+        }
+      ],
+      "schedules": [
+        {
+          "name": "topic-monitoring",
+          "cron": "0 8 * * *",
+          "skill": "bundled:research-methodology",
+          "description": "Daily scan for new developments on active topics"
+        }
+      ],
+      "context": "context.md",
+      "seed": {
+        "data": "seed/",
+        "run_on_install": true
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+name: App Showcase
+description: Share an Upjack app you've built
+labels: ["showcase"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Built something with Upjack? Share it here! We love seeing what people create.
+
+  - type: input
+    id: app-name
+    attributes:
+      label: App name
+      placeholder: "My CRM / Research Tracker / Inventory System"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What does it do?
+      description: Brief description of your app.
+    validations:
+      required: true
+
+  - type: input
+    id: entities
+    attributes:
+      label: Entity types
+      description: What entities does your app manage?
+      placeholder: "contact, deal, activity"
+    validations:
+      required: true
+
+  - type: input
+    id: repo
+    attributes:
+      label: Repository URL (optional)
+      description: Link to the source code if it's public.
+
+  - type: textarea
+    id: lessons
+    attributes:
+      label: Anything you learned or feedback?
+      description: Tips for others, rough edges you hit, features you wish existed.

@@ -1,0 +1,26 @@
+[
+  {
+    "type": "label",
+    "version": 1,
+    "name": "bug",
+    "color": "#EF4444",
+    "description": "Something broken that needs fixing",
+    "tags": ["sample"]
+  },
+  {
+    "type": "label",
+    "version": 1,
+    "name": "feature",
+    "color": "#8B5CF6",
+    "description": "New functionality to build",
+    "tags": ["sample"]
+  },
+  {
+    "type": "label",
+    "version": 1,
+    "name": "personal",
+    "color": "#F59E0B",
+    "description": "Non-work tasks",
+    "tags": ["sample"]
+  }
+]

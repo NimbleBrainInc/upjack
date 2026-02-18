@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CRM Company",
+  "description": "An organization tracked in the CRM",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Company name"
+    },
+    "domain": {
+      "type": "string",
+      "description": "Primary website domain"
+    },
+    "industry": {
+      "type": "string",
+      "description": "Industry vertical"
+    },
+    "size": {
+      "type": "string",
+      "description": "Company size range",
+      "enum": ["1-10", "11-50", "51-200", "201-1000", "1001-5000", "5000+"]
+    },
+    "location": {
+      "type": "string",
+      "description": "Primary office location"
+    },
+    "annual_revenue": {
+      "type": "string",
+      "description": "Estimated annual revenue range"
+    },
+    "linkedin_url": {
+      "type": "string",
+      "description": "LinkedIn company page URL",
+      "format": "uri"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-text notes about this company"
+    }
+  },
+  "required": ["name"]
+}

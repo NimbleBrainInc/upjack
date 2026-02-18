@@ -1,0 +1,11 @@
+{
+  "type": "company",
+  "version": 1,
+  "name": "Acme Corp",
+  "domain": "acmecorp.com",
+  "industry": "Technology",
+  "size": "51-200",
+  "location": "San Francisco, CA",
+  "annual_revenue": "$10M-$50M",
+  "notes": "Series B startup, strong product-market fit. Expanding sales team."
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research Note",
+  "description": "An extracted insight, quote, or observation from a source",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "The note content"
+    },
+    "quote": {
+      "type": "string",
+      "description": "Direct quote from the source (if applicable)"
+    },
+    "claim_type": {
+      "type": "string",
+      "description": "Type of claim being made",
+      "enum": ["fact", "opinion", "statistic", "prediction", "methodology"]
+    },
+    "section": {
+      "type": "string",
+      "description": "Section or page reference in the source"
+    },
+    "confidence": {
+      "type": "string",
+      "description": "Confidence in the accuracy of this note",
+      "enum": ["high", "medium", "low"]
+    }
+  },
+  "required": ["content"]
+}

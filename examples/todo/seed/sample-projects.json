@@ -1,0 +1,19 @@
+[
+  {
+    "type": "project",
+    "version": 1,
+    "name": "Planning",
+    "description": "Quarterly planning and strategy work",
+    "color": "#3B82F6",
+    "due_date": "2026-03-15",
+    "tags": ["sample"]
+  },
+  {
+    "type": "project",
+    "version": 1,
+    "name": "Documentation",
+    "description": "Internal docs, wikis, and knowledge base",
+    "color": "#10B981",
+    "tags": ["sample"]
+  }
+]

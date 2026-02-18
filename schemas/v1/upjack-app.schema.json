@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://upjack.dev/schemas/v1/upjack-app.schema.json",
+  "title": "Upjack App",
+  "description": "Complete manifest schema for an Upjack app. Extends the MCPB manifest with a required ai.nimblebrain/upjack extension in _meta.",
+  "allOf": [
+    {
+      "$ref": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "type": "object",
+          "properties": {
+            "ai.nimblebrain/upjack": {
+              "$ref": "upjack-manifest.schema.json"
+            }
+          },
+          "required": ["ai.nimblebrain/upjack"]
+        }
+      },
+      "required": ["_meta"]
+    }
+  ]
+}

@@ -1,0 +1,552 @@
+---
+title: "Runtime Tools"
+description: "The 6 entity management operations (create, get, update, list, search, delete) and their Python/TypeScript API and MCP tool interfaces."
+draft: false
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Overview
+
+The `upjack` library provides 6 entity management operations. When using `create_server()` / `createServer()`, these are automatically registered as 6 MCP tools per entity type (e.g., `create_contact`, `get_contact`, `list_contacts`). When using `UpjackApp` directly, they are available as methods.
+
+The operations work on the entity definitions and schemas declared in the app's [upjack manifest](/reference/manifest/). They are the primary interface through which agents (and custom code) interact with entity data.
+
+### Implementation Notes
+
+The current implementation uses in-memory file scanning for search (not a database index). Filters use flat key matching with comparison operators (not JSONPath). Singleton checking is not yet implemented. Immutable field protection is implemented: update operations silently strip `id`, `type`, `version`, `created_at`, and `created_by` from incoming data.
+
+## Tool Summary
+
+| Tool | Purpose | Returns |
+|------|---------|---------|
+| `create_{entity}` | Create a new entity | Created entity dict/object |
+| `get_{entity}` | Get a single entity by ID | Entity dict/object |
+| `update_{entity}` | Update an existing entity | Updated entity dict/object |
+| `list_{plural}` | Lightweight entity listing | Array of entity dicts/objects |
+| `search_{plural}` | Text and structured search | Array of matching entity dicts/objects |
+| `delete_{entity}` | Soft or hard delete an entity | Deleted entity dict/object |
+
+### MCP Tool Naming
+
+When using `create_server()` / `createServer()`, tools are named per entity type:
+
+| Entity Type | Plural | Tools Generated |
+|-------------|--------|-----------------|
+| `contact` | `contacts` | `create_contact`, `get_contact`, `update_contact`, `list_contacts`, `search_contacts`, `delete_contact` |
+| `deal` | `deals` | `create_deal`, `get_deal`, `update_deal`, `list_deals`, `search_deals`, `delete_deal` |
+
+## `create_entity`
+
+Create a new entity of a given type.
+
+### API
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    app.create_entity(entity_type: str, data: dict, created_by: str = "agent") -> dict
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    app.createEntity(entityType: string, data: Record<string, unknown>, createdBy?: string): EntityRecord
+    ```
+  </TabItem>
+</Tabs>
+
+### MCP Tool
+
+```
+create_{entity}(data: dict) -> dict
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `entity_type` / `entityType` | string | Yes | — | Entity type name (e.g., `"contact"`). |
+| `data` | object | Yes | — | Domain-specific fields for the entity. |
+| `created_by` / `createdBy` | string | No | `"agent"` | Origin of the entity (`user`, `agent`, `system`, `ingestion`, `schedule`). |
+
+### Behavior
+
+1. **Validate entity type**: Confirm entity type exists in the app's entity definitions.
+2. **Generate ID**: Create a type-prefixed ULID using the entity's `prefix` (e.g., `ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X`).
+3. **Inject base fields**: Set `id`, `type`, `version` (default 1), `created_at` (now), `updated_at` (now), `created_by`, `status` (`"active"`).
+4. **Extract special fields**: Pull `tags`, `relationships`, and `source` from `data` into base-level fields if present.
+5. **Merge data**: Combine base fields with the remaining `data` fields.
+6. **Validate against schema**: If a schema is loaded for this entity type, validate the complete record. On failure, no entity is created.
+7. **Write file**: Write the entity JSON to `{namespace}/data/{plural}/{id}.json` with 2-space indentation.
+8. **Return**: The complete entity (base fields + app data merged flat).
+
+### Example
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack import UpjackApp
+
+    app = UpjackApp.from_manifest("manifest.json")
+
+    contact = app.create_entity("contact", {
+        "name": "Alice Chen",
+        "email": "alice@example.com",
+        "company_name": "TechCorp",
+        "title": "VP Engineering",
+        "stage": "new",
+    })
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { UpjackApp } from "upjack";
+
+    const app = UpjackApp.fromManifest("manifest.json");
+
+    const contact = app.createEntity("contact", {
+      name: "Alice Chen",
+      email: "alice@example.com",
+      company_name: "TechCorp",
+      title: "VP Engineering",
+      stage: "new",
+    });
+    ```
+  </TabItem>
+</Tabs>
+
+**Returns:**
+```json
+{
+  "id": "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X",
+  "type": "contact",
+  "version": 1,
+  "created_at": "2026-02-15T10:30:00Z",
+  "updated_at": "2026-02-15T10:30:00Z",
+  "created_by": "agent",
+  "status": "active",
+  "tags": [],
+  "relationships": [],
+  "name": "Alice Chen",
+  "email": "alice@example.com",
+  "company_name": "TechCorp",
+  "title": "VP Engineering",
+  "stage": "new"
+}
+```
+
+### Errors
+
+<Tabs>
+  <TabItem label="Python">
+    | Condition | Exception | Message |
+    |-----------|-----------|---------|
+    | Unknown `entity_type` | `ValueError` | `Unknown entity type 'foo'. Known types: ['contact', 'deal']` |
+    | Schema validation failure | `jsonschema.ValidationError` | Describes the specific validation error |
+  </TabItem>
+  <TabItem label="TypeScript">
+    | Condition | Error | Message |
+    |-----------|-------|---------|
+    | Unknown `entityType` | `Error` | `Unknown entity type 'foo'. Known types: contact, deal` |
+    | Schema validation failure | `Error` | Describes the specific validation error (from AJV) |
+  </TabItem>
+</Tabs>
+
+## `update_entity`
+
+Update an existing entity by ID.
+
+### API
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    app.update_entity(entity_type: str, entity_id: str, data: dict, merge: bool = True) -> dict
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    app.updateEntity(entityType: string, entityId: string, data: Record<string, unknown>, merge?: boolean): EntityRecord
+    ```
+  </TabItem>
+</Tabs>
+
+### MCP Tool
+
+```
+update_{entity}(entity_id: str, data: dict) -> dict
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `entity_type` / `entityType` | string | Yes | — | Entity type name. |
+| `entity_id` / `entityId` | string | Yes | — | Entity ID (e.g., `"ct_01HZ...5X"`). |
+| `data` | object | Yes | — | Fields to update. |
+| `merge` | boolean | No | `true` | Whether to merge with existing data or replace. |
+
+### Behavior
+
+1. **Load entity**: Read the entity JSON file from its storage path. Error if not found.
+2. **Strip immutable fields**: Silently remove `id`, `type`, `version`, `created_at`, and `created_by` from incoming `data`. These cannot be changed after creation.
+3. **Merge or replace**: If `merge: true` (default), shallow-merge `data` into the existing entity. Existing fields not present in `data` are preserved. If `merge: false`, replace all fields except immutable base fields.
+4. **Auto-update timestamp**: Set `updated_at` to the current timestamp.
+5. **Validate against schema**: If a schema is loaded, validate the merged entity. On failure, no changes are written.
+6. **Write file**: Overwrite the entity JSON file.
+7. **Return**: The complete updated entity.
+
+### Example
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    updated = app.update_entity("contact", "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X", {
+        "stage": "qualified",
+        "score": 85,
+    })
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const updated = app.updateEntity("contact", "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X", {
+      stage: "qualified",
+      score: 85,
+    });
+    ```
+  </TabItem>
+</Tabs>
+
+**Returns:**
+```json
+{
+  "id": "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X",
+  "type": "contact",
+  "version": 1,
+  "created_at": "2026-02-15T10:30:00Z",
+  "updated_at": "2026-02-15T14:22:00Z",
+  "created_by": "agent",
+  "status": "active",
+  "name": "Alice Chen",
+  "email": "alice@example.com",
+  "company_name": "TechCorp",
+  "title": "VP Engineering",
+  "stage": "qualified",
+  "score": 85
+}
+```
+
+## `entity_search`
+
+Text and structured search across entities of a given type.
+
+### API
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    app.search_entities(
+        entity_type: str,
+        query: str | None = None,
+        filter: dict | None = None,
+        sort: str = "-updated_at",
+        limit: int = 20,
+    ) -> list[dict]
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    app.searchEntities(entityType: string, options?: {
+      query?: string;
+      filter?: Record<string, unknown>;
+      sort?: string;
+      limit?: number;
+    }): EntityRecord[]
+    ```
+  </TabItem>
+</Tabs>
+
+### MCP Tool
+
+```
+search_{plural}(query: str | None, filter: dict | None, sort: str, limit: int) -> list[dict]
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `entity_type` / `entityType` | string | Yes | — | Entity type to search. |
+| `query` | string | No | — | Case-insensitive substring match across all string-valued fields. |
+| `filter` | object | No | — | Structured filter with comparison operators. |
+| `sort` | string | No | `"-updated_at"` | Sort field. Prefix with `-` for descending. |
+| `limit` | integer | No | `20` | Maximum results to return. |
+
+### Behavior
+
+1. **Load all entities**: Read every JSON file in `{namespace}/data/{plural}/`. Corrupt files are silently skipped.
+2. **Exclude deleted by default**: Unless the filter explicitly includes a `status` key, entities with `status: "deleted"` are excluded.
+3. **Apply text query**: If `query` is provided, match case-insensitively against all string-valued fields in the entity. An entity matches if any string field contains the query as a substring.
+4. **Apply structured filters**: If `filter` is provided, evaluate each key-value pair against the entity. All conditions must match (AND logic).
+5. **Sort**: Apply the sort expression. Default is `-updated_at` (most recently updated first).
+6. **Limit**: Return at most `limit` results.
+7. **Return**: Array of complete entity dicts/objects matching the query.
+
+### Filter Syntax
+
+Filters use flat field names (not JSONPath) with optional comparison operators:
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    # Direct equality
+    app.search_entities("contact", filter={"stage": "qualified"})
+
+    # Comparison operators
+    app.search_entities("contact", filter={"score": {"$gte": 70}})
+
+    # Combined filters (AND logic)
+    app.search_entities("contact", filter={
+        "stage": {"$in": ["qualified", "contacted"]},
+        "score": {"$gte": 60},
+    })
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // Direct equality
+    app.searchEntities("contact", { filter: { stage: "qualified" } });
+
+    // Comparison operators
+    app.searchEntities("contact", { filter: { score: { $gte: 70 } } });
+
+    // Combined filters (AND logic)
+    app.searchEntities("contact", {
+      filter: {
+        stage: { $in: ["qualified", "contacted"] },
+        score: { $gte: 60 },
+      },
+    });
+    ```
+  </TabItem>
+</Tabs>
+
+Supported operators:
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| (direct value) | Equality | `{"stage": "qualified"}` |
+| `$gt` | Greater than | `{"score": {"$gt": 50}}` |
+| `$gte` | Greater than or equal | `{"score": {"$gte": 70}}` |
+| `$lt` | Less than | `{"score": {"$lt": 50}}` |
+| `$lte` | Less than or equal | `{"score": {"$lte": 30}}` |
+| `$ne` | Not equal | `{"stage": {"$ne": "lost"}}` |
+| `$in` | Value in array | `{"stage": {"$in": ["qualified", "contacted"]}}` |
+| `$contains` | Array field contains value | `{"tags": {"$contains": "saas"}}` |
+| `$exists` | Field exists (true) or is absent (false) | `{"score": {"$exists": true}}` |
+
+### Example
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    results = app.search_entities(
+        "contact",
+        query="TechCorp",
+        filter={"score": {"$gte": 60}},
+        sort="-score",
+        limit=10,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const results = app.searchEntities("contact", {
+      query: "TechCorp",
+      filter: { score: { $gte: 60 } },
+      sort: "-score",
+      limit: 10,
+    });
+    ```
+  </TabItem>
+</Tabs>
+
+**Returns:**
+```json
+[
+  {
+    "id": "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X",
+    "type": "contact",
+    "version": 1,
+    "created_at": "2026-02-15T10:30:00Z",
+    "updated_at": "2026-02-15T14:22:00Z",
+    "status": "active",
+    "name": "Alice Chen",
+    "email": "alice@example.com",
+    "company_name": "TechCorp",
+    "title": "VP Engineering",
+    "stage": "qualified",
+    "score": 85
+  }
+]
+```
+
+### Performance Note
+
+The current implementation loads all entity files into memory for each search operation. This works well for typical app sizes (hundreds to low thousands of entities). For larger datasets, a future version may introduce indexing.
+
+## `entity_list`
+
+Lightweight entity listing. Simpler than `entity_search`, filtering by status only.
+
+### API
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    app.list_entities(entity_type: str, status: str = "active", limit: int = 50) -> list[dict]
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    app.listEntities(entityType: string, status?: string, limit?: number): EntityRecord[]
+    ```
+  </TabItem>
+</Tabs>
+
+### MCP Tool
+
+```
+list_{plural}(status: str, limit: int) -> list[dict]
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `entity_type` / `entityType` | string | Yes | — | Entity type to list. |
+| `status` | string | No | `"active"` | Filter by status. |
+| `limit` | integer | No | `50` | Maximum results to return. |
+
+### Example
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    contacts = app.list_entities("contact", status="active", limit=5)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const contacts = app.listEntities("contact", "active", 5);
+    ```
+  </TabItem>
+</Tabs>
+
+### Difference from `entity_search`
+
+| Aspect | `entity_search` | `entity_list` |
+|--------|-----------------|---------------|
+| Text search | Yes (substring match) | No |
+| Structured filters | Yes (comparison operators) | Status only |
+| Sort | Any field | By `updated_at` (most recent first) |
+| Default limit | 20 | 50 |
+| Returns | Full entity dicts/objects | Full entity dicts/objects |
+| Use case | Finding specific entities | Browsing/overview |
+
+## `entity_delete`
+
+Delete an entity by ID. Soft delete (status change) by default; hard delete (file removal) with explicit flag.
+
+### API
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    app.delete_entity(entity_type: str, entity_id: str, hard: bool = False) -> dict
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    app.deleteEntity(entityType: string, entityId: string, hard?: boolean): EntityRecord
+    ```
+  </TabItem>
+</Tabs>
+
+### MCP Tool
+
+```
+delete_{entity}(entity_id: str, hard: bool = False) -> dict
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `entity_type` / `entityType` | string | Yes | — | Entity type name. |
+| `entity_id` / `entityId` | string | Yes | — | Entity ID to delete. |
+| `hard` | boolean | No | `false` | If `true`, permanently remove the file. If `false`, set status to `"deleted"`. |
+
+### Example
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    # Soft delete (default)
+    result = app.delete_entity("contact", "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X")
+    assert result["status"] == "deleted"
+
+    # Hard delete (permanent)
+    result = app.delete_entity("contact", "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X", hard=True)
+    # File is removed from disk
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // Soft delete (default)
+    const result = app.deleteEntity("contact", "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X");
+    console.log(result.status); // "deleted"
+
+    // Hard delete (permanent)
+    const removed = app.deleteEntity("contact", "ct_01HZ3QKBN9YWVJ0RPFA7MT8C5X", true);
+    // File is removed from disk
+    ```
+  </TabItem>
+</Tabs>
+
+## Common Errors
+
+<Tabs>
+  <TabItem label="Python">
+    | Exception | When |
+    |-----------|------|
+    | `ValueError` | Unknown entity type, invalid ID prefix |
+    | `FileNotFoundError` | Entity ID does not exist on disk |
+    | `jsonschema.ValidationError` | Data fails JSON Schema validation |
+    | `json.JSONDecodeError` | Entity file contains corrupt JSON (raised by `get_entity`; `list` and `search` skip corrupt files silently) |
+  </TabItem>
+  <TabItem label="TypeScript">
+    | Error | When |
+    |-------|------|
+    | `Error` ("Unknown entity type...") | Unknown entity type, invalid ID prefix |
+    | `Error` ("Entity not found...") | Entity ID does not exist on disk |
+    | `Error` ("Validation failed...") | Data fails JSON Schema validation (AJV) |
+  </TabItem>
+</Tabs>
+
+## Concurrency and Consistency
+
+Entity operations work on individual JSON files in the workspace. The consistency model is:
+
+- **Single-writer**: The agent processes one tool call at a time. Concurrent writes to the same entity are not expected.
+- **Read-your-writes**: After an operation returns, subsequent reads will see the updated state.
+- **No transactions**: Multi-entity operations are not atomic. If a skill needs to create a contact and an activity, they are two separate writes. This is acceptable because the agent is the sole writer.
+
+## Future Enhancements
+
+The following features are specified but not yet implemented:
+
+- **Singleton constraint**: Preventing creation of duplicate singleton entities.
+- **Indexed search**: SQLite FTS or similar for faster search on large datasets.
+- **Structured error objects**: MCP-level error responses with `code`/`message`/`details` format.
+- **Entity summaries**: Returning lightweight projections from `entity_list` instead of full objects.

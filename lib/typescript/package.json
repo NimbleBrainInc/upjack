@@ -1,0 +1,69 @@
+{
+  "name": "upjack",
+  "version": "0.1.0",
+  "description": "Schema-driven entity management for AI-native applications",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "upjack": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "check": "biome format src/ tests/ && biome lint src/ tests/ && tsc --noEmit && vitest run",
+    "format": "biome format --write src/ tests/",
+    "format:check": "biome format src/ tests/",
+    "lint": "biome lint src/ tests/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["upjack", "nimblebrain", "mcp", "agent", "ai", "entity", "schema", "json-schema", "declarative", "entity-management", "schema-driven"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NimbleBrainInc/upjack.git",
+    "directory": "lib/typescript"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "ajv": "^8.17.0",
+    "ajv-formats": "^3.0.0",
+    "ulidx": "^2.4.0"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@types/node": "^18.19.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

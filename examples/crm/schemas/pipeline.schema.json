@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CRM Pipeline",
+  "description": "Pipeline configuration (singleton). Defines the stages deals progress through.",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Pipeline name",
+      "default": "Default Pipeline"
+    },
+    "stages": {
+      "type": "array",
+      "description": "Ordered list of pipeline stages",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stage name"
+          },
+          "order": {
+            "type": "integer",
+            "description": "Sort order",
+            "minimum": 0
+          },
+          "probability": {
+            "type": "integer",
+            "description": "Default win probability for deals in this stage",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "max_days": {
+            "type": "integer",
+            "description": "Maximum days a deal should stay in this stage before escalation",
+            "minimum": 1
+          }
+        },
+        "required": ["name", "order", "probability"]
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["stages"]
+}

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+workspace/
+.venv/
+README.md
+validate.py

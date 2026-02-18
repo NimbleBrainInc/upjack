@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research Topic",
+  "description": "A research topic or question being investigated",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Topic title or research question"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of what to investigate"
+    },
+    "scope": {
+      "type": "string",
+      "description": "Boundaries of the research (what's in/out of scope)"
+    },
+    "priority": {
+      "type": "string",
+      "description": "Research priority",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "deadline": {
+      "type": "string",
+      "description": "Target completion date",
+      "format": "date"
+    },
+    "key_questions": {
+      "type": "array",
+      "description": "Specific questions to answer",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["title"]
+}

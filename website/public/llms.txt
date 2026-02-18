@@ -1,0 +1,43 @@
+# Upjack
+
+> Upjack is a declarative framework for building AI-powered applications.
+> The fastest way to start is with the app-builder skill: install it with
+> `npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder`, describe the app
+> you want, and your agent generates everything. You can also build by hand
+> using JSON Schema and Markdown. Either way, Upjack provides entity
+> management, validation, search, and a complete MCP server — automatically.
+
+Upjack is built by NimbleBrain (https://nimblebrain.ai).
+
+## Documentation
+
+- [Introduction](https://upjack.dev/introduction/): What Upjack is and key concepts
+- [Quick Start](https://upjack.dev/quick-start/): Install, scaffold, and run in 5 minutes
+- [Architecture](https://upjack.dev/concepts/architecture/): Design philosophy and runtime architecture
+- [Thesis](https://upjack.dev/concepts/thesis/): Why AI-native apps need a new framework
+- [Three Tiers](https://upjack.dev/concepts/three-tiers/): Complexity levels from no-code to custom server
+- [Manifest Reference](https://upjack.dev/reference/manifest/): Complete manifest format specification
+- [Schemas](https://upjack.dev/reference/schemas/): Published JSON Schemas, hosted URLs, and validation
+- [Entity Model](https://upjack.dev/reference/entity-model/): Base schema, IDs, storage, lifecycle
+- [Runtime Tools](https://upjack.dev/reference/runtime-tools/): 6 CRUD operations and their interfaces
+- [Bundles & Skills](https://upjack.dev/reference/bundles-and-skills/): Dependencies and domain expertise
+- [Lifecycle](https://upjack.dev/reference/lifecycle/): Install, update, uninstall operations
+- [Python Library](https://upjack.dev/libraries/python/): upjack PyPI package
+- [TypeScript Library](https://upjack.dev/libraries/typescript/): @nimblebrain/upjack npm package
+
+## Examples
+
+- [CRM](https://upjack.dev/examples/crm/): Full-featured CRM with 5 entities, skills, bundles
+- [Todo](https://upjack.dev/examples/todo/): Mid-complexity todo with hooks, schedules, views
+- [Research Assistant](https://upjack.dev/examples/research-assistant/): Minimal 4-entity example
+
+## Key Facts
+
+- License: Apache 2.0
+- Python package: upjack (PyPI)
+- TypeScript package: @nimblebrain/upjack (npm)
+- Source: https://github.com/NimbleBrainInc/upjack
+- Generates 6 MCP tools per entity (create, get, update, list, search, delete)
+- Uses JSON Schema (draft 2020-12) for entity definitions
+- Storage: git-backed JSON files
+- Entity IDs: type-prefixed ULIDs (e.g., ct_01HZ3QKB...)

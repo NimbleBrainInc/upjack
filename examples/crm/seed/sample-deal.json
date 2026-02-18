@@ -1,0 +1,13 @@
+{
+  "type": "deal",
+  "version": 1,
+  "title": "Acme Corp - Agent Platform",
+  "value": 48000,
+  "currency": "USD",
+  "stage": "Qualification",
+  "stage_order": 2,
+  "probability": 25,
+  "expected_close": "2026-04-15",
+  "notes": "Annual contract. Evaluating against two competitors.",
+  "tags": ["enterprise", "q2-target"]
+}

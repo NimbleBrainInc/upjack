@@ -1,0 +1,73 @@
+name: Publish TypeScript Library
+
+on:
+  push:
+    tags:
+      - 'typescript-v*'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        working-directory: lib/typescript
+        run: npm install
+
+      - name: Format check
+        working-directory: lib/typescript
+        run: npx biome format src/ tests/
+
+      - name: Lint
+        working-directory: lib/typescript
+        run: npx biome lint src/ tests/
+
+      - name: Type check
+        working-directory: lib/typescript
+        run: npx tsc --noEmit
+
+      - name: Tests
+        working-directory: lib/typescript
+        run: npx vitest run
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        working-directory: lib/typescript
+        run: npm install
+
+      - name: Verify tag matches package version
+        working-directory: lib/typescript
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/typescript-v}"
+          PKG_VERSION=$(node -e "console.log(require('./package.json').version)")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: lib/typescript
+        run: npx tsup
+
+      - name: Publish to npm
+        working-directory: lib/typescript
+        run: npm publish --provenance --access public

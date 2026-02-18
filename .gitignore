@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.ruff_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# TypeScript build output
+lib/typescript/dist/
+
+# Auto-generated schemas
+schemas/v1/*.bundled.schema.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude (commit skills, ignore local state)
+.claude/settings.local.json
+.claude/memory/
+
+# Upjack workspace (runtime entity data)
+workspace/
+
+# Vendored dependencies
+**/deps/
+
+# MCPB bundles
+*.mcpb
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Eval results
+evals/results/*/

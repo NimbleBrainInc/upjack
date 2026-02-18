@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CRM Deal",
+  "description": "A sales opportunity being tracked through the pipeline",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Deal title"
+    },
+    "value": {
+      "type": "number",
+      "description": "Deal value in dollars",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "description": "Currency code",
+      "default": "USD",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "stage": {
+      "type": "string",
+      "description": "Current pipeline stage"
+    },
+    "stage_order": {
+      "type": "integer",
+      "description": "Numeric order of the current stage (for sorting)",
+      "minimum": 0
+    },
+    "probability": {
+      "type": "integer",
+      "description": "Win probability percentage",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "expected_close": {
+      "type": "string",
+      "description": "Expected close date",
+      "format": "date"
+    },
+    "closed_at": {
+      "type": "string",
+      "description": "Actual close date",
+      "format": "date-time"
+    },
+    "lost_reason": {
+      "type": "string",
+      "description": "Reason for losing the deal (if closed-lost)"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": ["title", "stage"]
+}

@@ -1,0 +1,100 @@
+{
+  "manifest_version": "0.4",
+  "name": "@nimblebraininc/todo",
+  "version": "1.0.0",
+  "description": "AI-native todo list for managing tasks, projects, and priorities",
+  "author": {
+    "name": "NimbleBrain Inc."
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server",
+    "mcp_config": {
+      "command": "python",
+      "args": ["server.py"]
+    }
+  },
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "upjack_version": "0.1",
+      "namespace": "apps/todo",
+      "display": {
+        "name": "Todo List",
+        "icon": "\u2705",
+        "category": "operations"
+      },
+      "entities": [
+        {
+          "name": "task",
+          "plural": "tasks",
+          "schema": "schemas/task.schema.json",
+          "prefix": "tsk",
+          "index": true
+        },
+        {
+          "name": "project",
+          "plural": "projects",
+          "schema": "schemas/project.schema.json",
+          "prefix": "prj",
+          "index": true
+        },
+        {
+          "name": "label",
+          "plural": "labels",
+          "schema": "schemas/label.schema.json",
+          "prefix": "lbl",
+          "index": true
+        }
+      ],
+      "skills": [
+        {
+          "source": "bundled",
+          "path": "skills/task-management/SKILL.md"
+        }
+      ],
+      "hooks": [
+        {
+          "event": "entity.created",
+          "entity": "task",
+          "skill": "bundled:task-management"
+        }
+      ],
+      "schedules": [
+        {
+          "name": "daily-review",
+          "cron": "0 9 * * 1-5",
+          "skill": "bundled:task-management",
+          "description": "Daily task review and prioritization (weekdays 9 AM)"
+        }
+      ],
+      "views": [
+        {
+          "name": "overdue",
+          "entity": "task",
+          "description": "Active tasks past their due date",
+          "filter": "$.status == 'active'",
+          "sort": "due_date"
+        },
+        {
+          "name": "today",
+          "entity": "task",
+          "description": "Tasks due today, sorted by priority",
+          "filter": "$.status == 'active'",
+          "sort": "priority"
+        },
+        {
+          "name": "high-priority",
+          "entity": "task",
+          "description": "Active tasks with critical or high priority",
+          "filter": "$.priority == 'critical' || $.priority == 'high'",
+          "sort": "-created_at"
+        }
+      ],
+      "context": "context.md",
+      "seed": {
+        "data": "seed/",
+        "run_on_install": true
+      }
+    }
+  }
+}

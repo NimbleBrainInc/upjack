@@ -1,0 +1,18 @@
+{
+  "name": "upjack-website",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "sync-schemas": "bash ../scripts/sync-schemas.sh",
+    "build": "bash ../scripts/sync-schemas.sh && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^5.7.0",
+    "@astrojs/starlight": "^0.34.0",
+    "@astrojs/sitemap": "^3.3.0",
+    "sharp": "^0.33.0"
+  }
+}

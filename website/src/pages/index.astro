@@ -1,0 +1,1285 @@
+---
+const title = "UPJACK — Kill Your Boilerplate";
+const description =
+  "Tell your agent what you want. Get a full MCP server with validation, search, and storage. Automatically.";
+
+const beforeCode = `<span class="comment"># ── models.py ──────────────────────────</span>
+<span class="kw">class</span> <span class="fn">Contact</span>(models.Model):
+    name = models.CharField(max_length=<span class="num">200</span>)
+    email = models.EmailField(unique=True)
+    company = models.CharField(max_length=<span class="num">200</span>, blank=True)
+    phone = models.CharField(max_length=<span class="num">20</span>, blank=True)
+    status = models.CharField(
+        max_length=<span class="num">20</span>,
+        choices=[(<span class="str">'prospect'</span>, <span class="str">'Prospect'</span>),
+                 (<span class="str">'qualified'</span>, <span class="str">'Qualified'</span>),
+                 (<span class="str">'customer'</span>, <span class="str">'Customer'</span>)],
+        default=<span class="str">'prospect'</span>
+    )
+    score = models.IntegerField(
+        validators=[MinValueValidator(<span class="num">0</span>),
+                    MaxValueValidator(<span class="num">100</span>)],
+        default=<span class="num">0</span>
+    )
+    notes = models.TextField(blank=True)
+    owner = models.ForeignKey(User, on_delete=CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    <span class="kw">class</span> <span class="fn">Meta</span>:
+        ordering = [<span class="str">'-created_at'</span>]
+
+
+<span class="comment"># ── serializers.py ─────────────────────</span>
+<span class="kw">class</span> <span class="fn">ContactSerializer</span>(serializers.ModelSerializer):
+    <span class="kw">class</span> <span class="fn">Meta</span>:
+        model = Contact
+        fields = [<span class="str">'id'</span>, <span class="str">'name'</span>, <span class="str">'email'</span>, <span class="str">'company'</span>,
+                  <span class="str">'phone'</span>, <span class="str">'status'</span>, <span class="str">'score'</span>, <span class="str">'notes'</span>]
+        read_only_fields = [<span class="str">'id'</span>, <span class="str">'created_at'</span>]
+
+    <span class="kw">def</span> <span class="fn">validate_email</span>(self, value):
+        <span class="kw">if</span> Contact.objects.filter(email=value).exists():
+            <span class="kw">raise</span> serializers.ValidationError(
+                <span class="str">"Contact with this email already exists"</span>
+            )
+        <span class="kw">return</span> value
+
+
+<span class="comment"># ── views.py ───────────────────────────</span>
+<span class="kw">class</span> <span class="fn">ContactViewSet</span>(viewsets.ModelViewSet):
+    queryset = Contact.objects.all()
+    serializer_class = ContactSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderFilter]
+
+    <span class="kw">def</span> <span class="fn">perform_create</span>(self, serializer):
+        serializer.save(owner=self.request.user)
+
+    @action(detail=False)
+    <span class="kw">def</span> <span class="fn">search</span>(self, request):
+        q = request.query_params.get(<span class="str">'q'</span>, <span class="str">''</span>)
+        contacts = self.queryset.filter(
+            Q(name__icontains=q) |
+            Q(email__icontains=q) |
+            Q(company__icontains=q)
+        )
+        <span class="comment"># ... + urls.py, tests.py, migrations,</span>
+        <span class="comment"># admin.py, permissions, pagination ...</span>
+<div class="fade"></div>`;
+
+const afterCode = `<span class="comment"># ── Install the skill ──────────────────</span>
+<span class="good">$</span> npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder
+
+<span class="comment"># ── Tell your agent ───────────────────</span>
+<span class="good">claude &gt;</span> <span class="str">Build me a CRM app</span>
+
+<span class="comment"># ── Agent generates ───────────────────</span>
+  my-crm/
+  ├── manifest.json
+  ├── schemas/
+  │   ├── contact.schema.json
+  │   ├── company.schema.json
+  │   └── deal.schema.json
+  ├── skills/
+  │   └── lead-qualification/
+  │       └── SKILL.md
+  ├── context.md
+  ├── seed/
+  │   └── sample-contacts.json
+  └── server.py
+
+<span class="comment"># ── Run it ────────────────────────────</span>
+<span class="good">$</span> python server.py
+<span class="comment"># Tools: create_contact, list_contacts,</span>
+<span class="comment"># search_contacts, ... (18 total)</span>
+
+<span class="good">// Done. You're jacked.</span>`;
+
+const agentCliContent = `<span class="p">$</span> <span class="c">npm i -g @nimblebraininc/mpak</span>
+<span class="p">$</span> <span class="c">mpak skill install @nimblebraininc/upjack-app-builder</span>
+<span class="ap">&gt;</span> <span class="t">Build me a CRM</span>
+<span class="p">$</span> <span class="c">python server.py</span>
+
+<span class="cm">// Done. 18 tools. Zero boilerplate.</span>`;
+
+const cursorContent = `<span class="cm">// .cursor/mcp.json</span>
+{
+  <span class="key">"mcpServers"</span>: {
+    <span class="key">"upjack"</span>: {
+      <span class="key">"command"</span>: <span class="str">"npx"</span>,
+      <span class="key">"args"</span>: [<span class="str">"@nimblebraininc/mpak"</span>, <span class="str">"run"</span>,
+             <span class="str">"@nimblebraininc/upjack-app-builder"</span>]
+    }
+  }
+}
+
+<span class="ap">&gt;</span> <span class="t">Build me a CRM</span>
+<span class="p">$</span> <span class="c">python server.py</span>`;
+
+const windsurfContent = `<span class="cm">// windsurf mcp config</span>
+{
+  <span class="key">"mcpServers"</span>: {
+    <span class="key">"upjack"</span>: {
+      <span class="key">"command"</span>: <span class="str">"npx"</span>,
+      <span class="key">"args"</span>: [<span class="str">"@nimblebraininc/mpak"</span>, <span class="str">"run"</span>,
+             <span class="str">"@nimblebraininc/upjack-app-builder"</span>]
+    }
+  }
+}
+
+<span class="ap">&gt;</span> <span class="t">Build me a CRM</span>
+<span class="p">$</span> <span class="c">python server.py</span>`;
+
+const manualPyContent = `<span class="p">$</span> <span class="c">pip install upjack</span>
+
+<span class="cm">// Then follow the <a href="/quick-start/#the-manual-way-build-it-yourself">Quick Start guide</a></span>`;
+
+const manualTsContent = `<span class="p">$</span> <span class="c">npm install upjack</span>
+
+<span class="cm">// Then follow the <a href="/quick-start/#the-manual-way-build-it-yourself">Quick Start guide</a></span>`;
+---
+
+<html lang="en" data-agent="claude-code">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="https://upjack.dev/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content="Upjack: Kill your boilerplate. Tell your agent what you want, get a full MCP server out." />
+    <meta property="og:url" content="https://upjack.dev" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Upjack" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://upjack.dev/og-image.png" />
+    <meta name="twitter:image:alt" content="Upjack: Kill your boilerplate. Tell your agent what you want, get a full MCP server out." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://upjack.dev/" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript><link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    /></noscript>
+    <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-W9BSLGCG');</script>
+    <!-- End Google Tag Manager -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "name": "Upjack",
+          "url": "https://upjack.dev",
+          "description": "Declarative framework for building AI-powered applications with JSON Schema and Markdown.",
+          "publisher": { "@id": "https://upjack.dev/#organization" }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://upjack.dev/#organization",
+          "name": "NimbleBrain",
+          "url": "https://nimblebrain.ai",
+          "sameAs": [
+            "https://github.com/NimbleBrainInc"
+          ]
+        },
+        {
+          "@type": "SoftwareApplication",
+          "name": "Upjack",
+          "applicationCategory": "DeveloperApplication",
+          "operatingSystem": "Cross-platform",
+          "description": "Build AI-powered apps by describing your domain in JSON Schema and Markdown. Get entity management, validation, search, and a complete MCP server automatically.",
+          "url": "https://upjack.dev",
+          "downloadUrl": "https://pypi.org/project/upjack/",
+          "softwareVersion": "0.0.1",
+          "license": "https://www.apache.org/licenses/LICENSE-2.0",
+          "programmingLanguage": ["Python", "TypeScript"],
+          "codeRepository": "https://github.com/NimbleBrainInc/upjack",
+          "author": { "@id": "https://upjack.dev/#organization" },
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+      *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+      :root {
+        --black: #0a0a0a;
+        --dark: #111;
+        --neon: #b9ff1a;
+        --neon-dim: rgba(185, 255, 26, 0.15);
+        --neon-glow: rgba(185, 255, 26, 0.4);
+        --white: #f0f0e8;
+        --grey: #9a9a9a;
+        --red: #ff4d4d;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        font-family: 'Space Grotesk', sans-serif;
+        background: var(--black);
+        color: var(--white);
+        overflow-x: hidden;
+        cursor: default;
+      }
+
+      /* === SKIP NAV === */
+      .skip-link {
+        position: absolute;
+        top: -100%;
+        left: 16px;
+        z-index: 200;
+        padding: 12px 24px;
+        min-height: 44px;
+        background: var(--neon);
+        color: var(--black);
+        font-weight: 800;
+        font-size: 14px;
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .skip-link:focus {
+        top: 16px;
+      }
+
+      /* === FOCUS STYLES === */
+      a:focus-visible, button:focus-visible {
+        outline: 2px solid var(--neon);
+        outline-offset: 4px;
+      }
+      .final-cta a:focus-visible {
+        outline-color: var(--black);
+      }
+
+      /* === NOISE OVERLAY === */
+      body::before {
+        content: '';
+        position: fixed; inset: 0; z-index: 9999;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+        background-repeat: repeat;
+      }
+
+      /* === NAV === */
+      nav {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 20px 48px;
+        background: rgba(10, 10, 10, 0.85);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(185, 255, 26, 0.1);
+      }
+      .logo {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 32px;
+        letter-spacing: 0.08em;
+        color: var(--neon);
+        text-shadow: 0 0 20px var(--neon-glow), 0 0 60px rgba(185, 255, 26, 0.15);
+        text-decoration: none;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+      }
+      nav .links { display: flex; gap: 28px; align-items: center; }
+      nav .links a {
+        color: var(--white); text-decoration: none; font-size: 13px;
+        font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+        opacity: 0.7; transition: opacity 0.2s, color 0.2s;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+      }
+      nav .links a:hover { opacity: 1; color: var(--neon); }
+      .nav-cta {
+        padding: 8px 20px !important;
+        border: 2px solid var(--neon) !important;
+        color: var(--neon) !important;
+        opacity: 1 !important;
+        border-radius: 0;
+        transition: background 0.15s, color 0.15s !important;
+      }
+      .nav-cta:hover {
+        background: var(--neon) !important;
+        color: var(--black) !important;
+      }
+
+      /* === HERO === */
+      .hero {
+        min-height: 100vh;
+        display: flex; flex-direction: column;
+        justify-content: center;
+        padding: 120px 48px 80px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      /* Diagonal slashes bg — contained to prevent mobile overflow */
+      .hero::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 80px,
+          rgba(185, 255, 26, 0.015) 80px,
+          rgba(185, 255, 26, 0.015) 82px
+        );
+        pointer-events: none;
+      }
+
+      /* Chevron watermark */
+      .hero-chevrons {
+        position: absolute;
+        top: 50%; right: 5%;
+        transform: translateY(-50%);
+        width: clamp(250px, 35vw, 500px);
+        height: clamp(250px, 35vw, 500px);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .hero-warning {
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 6px 16px;
+        background: rgba(255, 77, 77, 0.15);
+        border: 1px solid rgba(255, 77, 77, 0.3);
+        border-radius: 2px;
+        font-size: 11px; font-weight: 700;
+        letter-spacing: 0.15em; text-transform: uppercase;
+        color: var(--red);
+        margin-bottom: 40px;
+        width: fit-content;
+      }
+      .warning-dot {
+        width: 6px; height: 6px;
+        background: var(--red);
+        border-radius: 50%;
+        animation: blink 1s step-end infinite;
+      }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+      .hero h1 {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(72px, 12vw, 180px);
+        letter-spacing: 0.02em;
+        line-height: 0.9;
+        margin-bottom: 32px;
+        position: relative;
+        z-index: 2;
+      }
+      .hero h1 .neon {
+        color: var(--neon);
+        text-shadow: 0 0 30px var(--neon-glow), 0 0 80px rgba(185, 255, 26, 0.1);
+      }
+
+      .hero-sub {
+        font-size: clamp(16px, 2vw, 22px);
+        color: var(--grey);
+        max-width: 580px;
+        line-height: 1.6;
+        margin-bottom: 48px;
+        position: relative; z-index: 2;
+      }
+      .hero-sub strong { color: var(--white); font-weight: 600; }
+
+      .hero-actions {
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+        position: relative; z-index: 2;
+      }
+      .btn-neon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 16px 48px;
+        background: var(--neon);
+        color: var(--black);
+        text-decoration: none;
+        font-weight: 800; font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        transition: box-shadow 0.15s, transform 0.15s;
+        font-family: 'Space Grotesk', sans-serif;
+        border: none; cursor: pointer;
+        box-shadow: 0 0 30px var(--neon-dim), 0 4px 20px rgba(0,0,0,0.5);
+      }
+      .btn-neon:hover {
+        box-shadow: 0 0 50px var(--neon-glow), 0 4px 30px rgba(0,0,0,0.5);
+        transform: translateY(-2px);
+      }
+      .btn-dark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 16px 48px;
+        background: transparent;
+        color: var(--white);
+        text-decoration: none;
+        font-weight: 700; font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        border: 2px solid rgba(255,255,255,0.15);
+        transition: border-color 0.15s, color 0.15s;
+        font-family: 'Space Grotesk', sans-serif;
+        cursor: pointer;
+      }
+      .btn-dark:hover { border-color: var(--neon); color: var(--neon); }
+
+      /* === KILL COUNT === */
+      .kill-count {
+        padding: 0 48px;
+        border-top: 1px solid rgba(185, 255, 26, 0.1);
+        border-bottom: 1px solid rgba(185, 255, 26, 0.1);
+      }
+      .kill-count-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+      }
+      .kill-stat {
+        padding: 48px 32px;
+        text-align: center;
+        border-right: 1px solid rgba(185, 255, 26, 0.06);
+        position: relative;
+      }
+      .kill-stat:last-child { border-right: none; }
+      .kill-stat-value {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 72px;
+        color: var(--neon);
+        letter-spacing: 0.02em;
+        line-height: 1;
+        text-shadow: 0 0 20px var(--neon-dim);
+      }
+      .kill-stat-label {
+        font-size: 12px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.15em;
+        color: var(--grey);
+        margin-top: 8px;
+      }
+      .kill-stat-sub {
+        font-size: 11px;
+        color: rgba(255,255,255,0.35);
+        margin-top: 4px;
+        font-style: italic;
+      }
+
+      /* === WHAT DIED === */
+      .what-died {
+        padding: 120px 48px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .section-tag {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 16px;
+        letter-spacing: 0.2em;
+        color: var(--neon);
+        margin-bottom: 24px;
+        text-shadow: 0 0 10px var(--neon-dim);
+      }
+      .what-died h2 {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(48px, 7vw, 96px);
+        letter-spacing: 0.02em;
+        line-height: 0.95;
+        margin-bottom: 64px;
+      }
+
+      .killed-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 2px;
+      }
+      .killed-item {
+        background: var(--dark);
+        padding: 40px 32px;
+        position: relative;
+        overflow: hidden;
+        transition: background 0.2s;
+      }
+      .killed-item:hover {
+        background: rgba(185, 255, 26, 0.04);
+      }
+      .killed-item::before {
+        content: '';
+        position: absolute; top: 0; left: 0;
+        width: 3px; height: 0;
+        background: var(--neon);
+        transition: height 0.3s;
+      }
+      .killed-item:hover::before { height: 100%; }
+
+      .killed-icon {
+        font-size: 28px;
+        margin-bottom: 16px;
+        filter: grayscale(1);
+        transition: filter 0.2s;
+      }
+      .killed-item:hover .killed-icon { filter: grayscale(0); }
+
+      .killed-label {
+        font-size: 13px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        color: var(--grey);
+        text-decoration: line-through;
+        text-decoration-color: var(--red);
+        text-decoration-thickness: 2px;
+        margin-bottom: 8px;
+      }
+      .killed-replacement {
+        font-size: 18px; font-weight: 700;
+        color: var(--neon);
+        margin-bottom: 8px;
+      }
+      .killed-desc {
+        font-size: 14px; color: #9a9a9a; line-height: 1.5;
+      }
+
+      /* === BEFORE/AFTER === */
+      .vs-section {
+        padding: 80px 48px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .vs-section h2 {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(36px, 5vw, 64px);
+        letter-spacing: 0.02em;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+      .vs-sub {
+        text-align: center;
+        font-size: 16px;
+        color: var(--grey);
+        max-width: 640px;
+        margin: 0 auto 48px;
+        line-height: 1.6;
+      }
+      .vs-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+      }
+      .vs-side {
+        background: var(--dark);
+        overflow: hidden;
+      }
+      .vs-label {
+        padding: 14px 24px;
+        font-size: 11px; font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        display: flex; justify-content: space-between; align-items: center;
+      }
+      .vs-label-bad { background: rgba(255, 77, 77, 0.12); color: var(--red); }
+      .vs-label-good { background: rgba(185, 255, 26, 0.12); color: var(--neon); }
+      .vs-label .line-count {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 24px;
+      }
+      .vs-code {
+        padding: 24px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px; line-height: 1.7;
+        color: #999;
+        white-space: pre;
+        overflow-x: auto;
+        overflow-y: hidden;
+        position: relative;
+      }
+      .vs-code-clipped {
+        max-height: 680px;
+        overflow-y: hidden;
+      }
+      .vs-code .fade {
+        position: absolute; bottom: 0; left: 0; right: 0;
+        height: 120px;
+        background: linear-gradient(transparent, var(--dark));
+      }
+      .vs-more {
+        padding: 12px 24px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: var(--red);
+        opacity: 0.7;
+        border-top: 1px solid rgba(255, 77, 77, 0.15);
+      }
+      .vs-sub strong {
+        color: var(--white);
+        font-weight: 700;
+      }
+
+      /* === MID-PAGE CTA === */
+      .mid-cta {
+        padding: 80px 48px;
+        text-align: center;
+      }
+      .mid-cta p {
+        font-size: 18px;
+        color: var(--grey);
+        margin-bottom: 32px;
+        max-width: 500px;
+        margin-left: auto;
+        margin-right: auto;
+        line-height: 1.6;
+      }
+      .mid-cta-actions {
+        display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+      }
+
+      /* === HOW IT HITS === */
+      .how-section {
+        padding: 120px 48px;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      .how-section h2 {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(48px, 7vw, 96px);
+        letter-spacing: 0.02em;
+        line-height: 0.95;
+        margin-bottom: 64px;
+        text-align: center;
+      }
+
+      .dose {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        gap: 32px;
+        padding: 40px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        align-items: start;
+      }
+      .dose:last-child { border-bottom: none; }
+      .dose-num {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 80px;
+        color: var(--neon);
+        line-height: 1;
+        text-shadow: 0 0 20px var(--neon-dim);
+        text-align: center;
+      }
+      .dose-content h3 {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 32px;
+        letter-spacing: 0.04em;
+        margin-bottom: 8px;
+      }
+      .dose-content p {
+        font-size: 16px; color: var(--grey); line-height: 1.6;
+      }
+      .dose-file {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 6px 14px;
+        background: rgba(185, 255, 26, 0.08);
+        border: 1px solid rgba(185, 255, 26, 0.2);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: var(--neon);
+      }
+
+      /* === TESTIMONIAL / ATTITUDE === */
+      .attitude {
+        padding: 120px 48px;
+        text-align: center;
+        position: relative;
+      }
+      .attitude-quote {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(36px, 6vw, 80px);
+        letter-spacing: 0.02em;
+        line-height: 1.0;
+        max-width: 900px;
+        margin: 0 auto 32px;
+      }
+      .attitude-quote .neon {
+        color: var(--neon);
+        text-shadow: 0 0 20px var(--neon-dim);
+      }
+      .attitude-sub {
+        font-size: 16px; color: var(--grey);
+        max-width: 500px;
+        margin: 0 auto;
+        line-height: 1.6;
+      }
+
+      /* === FINAL CTA === */
+      .final-cta {
+        padding: 120px 48px;
+        text-align: center;
+        background: var(--neon);
+        color: var(--black);
+        position: relative;
+        overflow: hidden;
+      }
+      .final-cta::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 60px,
+          rgba(0,0,0,0.03) 60px,
+          rgba(0,0,0,0.03) 62px
+        );
+        pointer-events: none;
+      }
+      .final-cta h2 {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(64px, 10vw, 160px);
+        letter-spacing: 0.02em;
+        line-height: 0.9;
+        margin-bottom: 32px;
+        position: relative; z-index: 2;
+      }
+      .final-cta p {
+        font-size: 18px;
+        color: rgba(0,0,0,0.6);
+        margin-bottom: 48px;
+        max-width: 450px;
+        margin-left: auto; margin-right: auto;
+        position: relative; z-index: 2;
+      }
+
+
+      .cta-btns {
+        display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+        position: relative; z-index: 2;
+      }
+      .btn-black {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 16px 48px;
+        background: var(--black);
+        color: var(--neon);
+        text-decoration: none;
+        font-weight: 800; font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        transition: transform 0.15s, box-shadow 0.15s;
+        box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+      }
+      .btn-black:hover {
+        transform: translate(-2px, -2px);
+        box-shadow: 6px 6px 0 rgba(0,0,0,0.3);
+      }
+      .btn-outline-black {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 16px 48px;
+        background: transparent;
+        color: var(--black);
+        text-decoration: none;
+        font-weight: 800; font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        border: 3px solid var(--black);
+        transition: background 0.15s, color 0.15s;
+      }
+      .btn-outline-black:hover {
+        background: var(--black);
+        color: var(--neon);
+      }
+
+      /* === FOOTER === */
+      footer {
+        padding: 32px 48px;
+        display: flex; justify-content: space-between; align-items: center;
+        border-top: 1px solid rgba(185, 255, 26, 0.06);
+        font-size: 13px; color: var(--grey);
+      }
+      footer .logo {
+        font-size: 20px;
+        text-shadow: none;
+      }
+      footer a {
+        color: var(--grey); text-decoration: none;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+      }
+      footer a:hover { color: var(--neon); }
+
+      /* === TERMINAL === */
+      .terminal {
+        margin-top: 32px;
+        max-width: 640px;
+        position: relative;
+        z-index: 2;
+        background: var(--dark);
+        border: 1px solid rgba(185, 255, 26, 0.15);
+      }
+      .terminal-chrome {
+        display: flex;
+        align-items: stretch;
+        border-bottom: 1px solid rgba(185, 255, 26, 0.1);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .terminal-chrome::-webkit-scrollbar { display: none; }
+      .terminal-tab {
+        appearance: none;
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--grey);
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        padding: 10px 14px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .terminal-tab:hover { color: var(--white); }
+      [data-agent="claude-code"] .terminal-tab[data-tab="claude-code"],
+      [data-agent="codex"] .terminal-tab[data-tab="codex"],
+      [data-agent="cursor"] .terminal-tab[data-tab="cursor"],
+      [data-agent="windsurf"] .terminal-tab[data-tab="windsurf"],
+      [data-agent="manual-py"] .terminal-tab[data-tab="manual-py"],
+      [data-agent="manual-ts"] .terminal-tab[data-tab="manual-ts"] {
+        color: var(--neon);
+        border-bottom-color: var(--neon);
+      }
+      .terminal-sep {
+        width: 1px;
+        background: rgba(255,255,255,0.08);
+        margin: 8px 2px;
+        flex-shrink: 0;
+      }
+      .terminal-copy {
+        margin-left: auto;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--grey);
+        padding: 8px 14px;
+        transition: color 0.15s;
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .terminal-copy:hover { color: var(--neon); }
+      .terminal-copy svg { width: 14px; height: 14px; }
+      .terminal-body {
+        padding: 20px 24px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        line-height: 1.8;
+        color: #888;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      .t-content { display: none; }
+      [data-agent="claude-code"] .t-content[data-for="agent-cli"],
+      [data-agent="codex"] .t-content[data-for="agent-cli"] { display: block; }
+      [data-agent="cursor"] .t-content[data-for="cursor"] { display: block; }
+      [data-agent="windsurf"] .t-content[data-for="windsurf"] { display: block; }
+      [data-agent="manual-py"] .t-content[data-for="manual-py"] { display: block; }
+      [data-agent="manual-ts"] .t-content[data-for="manual-ts"] { display: block; }
+      .terminal-body .p { color: var(--neon); opacity: 0.5; }
+      .terminal-body .c { color: var(--neon); }
+      .terminal-body .ap { color: var(--neon); opacity: 0.6; }
+      .terminal-body .t { color: var(--white); }
+      .terminal-body .cm { color: #555; font-style: italic; }
+      .terminal-body .cm a { color: var(--neon); text-decoration: none; }
+      .terminal-body .cm a:hover { text-decoration: underline; }
+      .terminal-body .key { color: #ffab40; }
+      .terminal-body .str { color: #66bb6a; }
+
+      /* Final CTA terminal */
+      .final-cta .terminal {
+        max-width: 640px;
+        margin: 0 auto 48px;
+        background: var(--black);
+        border-color: rgba(0,0,0,0.3);
+        box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+      }
+      .final-cta .terminal-chrome { border-bottom-color: rgba(0,0,0,0.2); }
+      .final-cta .terminal-copy { color: rgba(0,0,0,0.4); }
+      .final-cta .terminal-copy:hover { color: var(--neon); }
+
+      /* === RESPONSIVE === */
+      @media (max-width: 900px) {
+        nav { padding: 16px 24px; }
+        nav .links { gap: 16px; }
+        nav .links a { font-size: 11px; }
+        .hero { padding: 100px 24px 60px; }
+        .kill-count { padding: 0 24px; }
+        .kill-count-inner { grid-template-columns: repeat(2, 1fr); }
+        .kill-stat { padding: 32px 16px; }
+        .kill-stat-value { font-size: 48px; }
+        .what-died { padding: 80px 24px; }
+        .killed-grid { grid-template-columns: 1fr; }
+        .vs-section { padding: 60px 24px; }
+        .vs-grid { grid-template-columns: 1fr; }
+        .vs-code { font-size: 11px; }
+        .how-section { padding: 80px 24px; }
+        .dose { grid-template-columns: 60px 1fr; gap: 16px; }
+        .dose-num { font-size: 48px; }
+        .attitude { padding: 80px 24px; }
+        .mid-cta { padding: 60px 24px; }
+        .final-cta { padding: 80px 24px; }
+        .terminal-tab { font-size: 10px; padding: 8px 10px; }
+        .terminal-body { font-size: 12px; padding: 16px 16px; }
+        footer { padding: 24px; flex-direction: column; gap: 12px; text-align: center; }
+      }
+    </style>
+    <style is:global>
+      .vs-code .kw { color: #ce93d8; }
+      .vs-code .fn { color: #64b5f6; }
+      .vs-code .str { color: #66bb6a; }
+      .vs-code .key { color: #ffab40; }
+      .vs-code .num { color: #b9ff1a; }
+      .vs-code .good { color: #b9ff1a; }
+      .vs-code .comment { color: #888; font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-W9BSLGCG"
+    height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
+
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- NAV -->
+    <nav aria-label="Main navigation">
+      <a href="/" class="logo">UPJACK</a>
+      <div class="links">
+        <a href="/introduction/">Docs</a>
+        <a href="https://github.com/NimbleBrainInc/upjack">GitHub</a>
+        <a href="/quick-start/" class="nav-cta">Get Jacked</a>
+      </div>
+    </nav>
+
+    <main id="main">
+      <!-- HERO -->
+      <section class="hero" aria-label="Introduction">
+        <svg class="hero-chevrons" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M10 90 L60 55 L110 90 L110 78 L60 43 L10 78 Z" fill="#b9ff1a" opacity="0.06"/>
+          <path d="M20 68 L60 40 L100 68 L100 56 L60 28 L20 56 Z" fill="#b9ff1a" opacity="0.04"/>
+          <path d="M30 48 L60 26 L90 48 L90 38 L60 16 L30 38 Z" fill="#b9ff1a" opacity="0.025"/>
+        </svg>
+
+        <div class="hero-warning" role="status">
+          <span class="warning-dot" aria-hidden="true"></span>
+          Warning: May eliminate your entire backend team
+        </div>
+
+        <h1>
+          KILL YOUR<br />
+          <span class="neon">BOILERPLATE.</span>
+        </h1>
+
+        <p class="hero-sub">
+          You've been writing the same CRUD endpoints for a decade.
+          <strong>Upjack ends that.</strong> Tell your agent what you want.
+          Get a full MCP server with validation, search, and storage. <strong>Automatically.</strong>
+        </p>
+
+        <div class="hero-actions">
+          <a href="/quick-start/" class="btn-neon">Get Jacked</a>
+          <a href="https://github.com/NimbleBrainInc/upjack" class="btn-dark">View Source</a>
+        </div>
+
+        <div class="terminal">
+          <div class="terminal-chrome">
+            <button class="terminal-tab" data-tab="claude-code">Claude Code</button>
+            <button class="terminal-tab" data-tab="codex">Codex</button>
+            <button class="terminal-tab" data-tab="cursor">Cursor</button>
+            <button class="terminal-tab" data-tab="windsurf">Windsurf</button>
+            <div class="terminal-sep"></div>
+            <button class="terminal-tab" data-tab="manual-py">Python</button>
+            <button class="terminal-tab" data-tab="manual-ts">TypeScript</button>
+            <button class="terminal-copy" aria-label="Copy commands">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          </div>
+          <div class="terminal-body">
+            <div class="t-content" data-for="agent-cli" set:html={agentCliContent} />
+            <div class="t-content" data-for="cursor" set:html={cursorContent} />
+            <div class="t-content" data-for="windsurf" set:html={windsurfContent} />
+            <div class="t-content" data-for="manual-py" set:html={manualPyContent} />
+            <div class="t-content" data-for="manual-ts" set:html={manualTsContent} />
+          </div>
+        </div>
+      </section>
+
+      <!-- KILL COUNT -->
+      <section class="kill-count" aria-label="Statistics">
+        <div class="kill-count-inner">
+          <div class="kill-stat">
+            <div class="kill-stat-value">847</div>
+            <div class="kill-stat-label">Lines Killed</div>
+            <div class="kill-stat-sub">per entity</div>
+          </div>
+          <div class="kill-stat">
+            <div class="kill-stat-value">6</div>
+            <div class="kill-stat-label">Tools Generated</div>
+            <div class="kill-stat-sub">per entity</div>
+          </div>
+          <div class="kill-stat">
+            <div class="kill-stat-value">0</div>
+            <div class="kill-stat-label">Lines of Code</div>
+            <div class="kill-stat-sub">required</div>
+          </div>
+          <div class="kill-stat">
+            <div class="kill-stat-value">1</div>
+            <div class="kill-stat-label">Sentence</div>
+            <div class="kill-stat-sub">to build your app</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOW IT HITS -->
+      <section class="how-section" aria-label="How it works">
+        <div class="section-tag" style="text-align:center;">DOSAGE</div>
+        <h2>HOW IT HITS</h2>
+
+        <div class="dose">
+          <div class="dose-num">01</div>
+          <div class="dose-content">
+            <h3>INSTALL THE SKILL</h3>
+            <p>One command. The app-builder skill knows how to generate complete Upjack apps from a description. Schemas, skills, manifest, server. Everything.</p>
+            <span class="dose-file">npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder</span>
+          </div>
+        </div>
+
+        <div class="dose">
+          <div class="dose-num">02</div>
+          <div class="dose-content">
+            <h3>TELL YOUR AGENT</h3>
+            <p>Describe the app you want in plain English. "Build me a CRM." The agent generates every file: schemas, skills, context, seed data, server entry point.</p>
+            <span class="dose-file">"Build me a CRM app"</span>
+          </div>
+        </div>
+
+        <div class="dose">
+          <div class="dose-num">03</div>
+          <div class="dose-content">
+            <h3>RUN IT</h3>
+            <p>One command. Full MCP server. Entity management, validation, search, storage. All generated. Zero boilerplate. Zero excuses.</p>
+            <span class="dose-file">python server.py</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- WHAT DIED -->
+      <section class="what-died" aria-label="Features">
+        <div class="section-tag">CASUALTY REPORT</div>
+        <h2>THINGS UPJACK KILLED</h2>
+
+        <div class="killed-grid">
+          <div class="killed-item">
+            <div class="killed-icon" aria-hidden="true">&#x1f480;</div>
+            <div class="killed-label">CRUD Endpoints</div>
+            <div class="killed-replacement">Auto-generated MCP tools</div>
+            <div class="killed-desc">6 tools per entity. Create, read, update, delete, list, search. You write nothing.</div>
+          </div>
+          <div class="killed-item">
+            <div class="killed-icon" aria-hidden="true">&#x1f480;</div>
+            <div class="killed-label">Validation Logic</div>
+            <div class="killed-replacement">JSON Schema enforcement</div>
+            <div class="killed-desc">Define constraints once in your schema. Invalid data never hits storage. Ever.</div>
+          </div>
+          <div class="killed-item">
+            <div class="killed-icon" aria-hidden="true">&#x1f480;</div>
+            <div class="killed-label">Database Setup</div>
+            <div class="killed-replacement">Git-backed JSON storage</div>
+            <div class="killed-desc">Every entity is a file. Every change is a commit. No database to manage.</div>
+          </div>
+          <div class="killed-item">
+            <div class="killed-icon" aria-hidden="true">&#x1f480;</div>
+            <div class="killed-label">Search Implementation</div>
+            <div class="killed-replacement">Built-in full-text search</div>
+            <div class="killed-desc">Search across all fields with filters. Works the second your schema exists.</div>
+          </div>
+          <div class="killed-item">
+            <div class="killed-icon" aria-hidden="true">&#x1f480;</div>
+            <div class="killed-label">Business Logic Code</div>
+            <div class="killed-replacement">Markdown skills</div>
+            <div class="killed-desc">Write your expertise in plain English. The AI reads it and acts on it. No functions required.</div>
+          </div>
+          <div class="killed-item">
+            <div class="killed-icon" aria-hidden="true">&#x1f480;</div>
+            <div class="killed-label">API Documentation</div>
+            <div class="killed-replacement">MCP protocol + resources</div>
+            <div class="killed-desc">Tools are self-describing. Skills are exposed as resources. Documentation writes itself.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BEFORE / AFTER -->
+      <section class="vs-section" aria-label="Code comparison">
+        <h2>BEFORE AND AFTER UPJACK</h2>
+        <p class="vs-sub">One entity. The old way needs a model, serializer, viewset, URL config, migrations, tests, and admin registration, spread across 7+ files. <strong>Upjack needs one sentence.</strong></p>
+        <div class="vs-grid">
+          <div class="vs-side">
+            <div class="vs-label vs-label-bad">
+              <span>The old way / 7+ files</span>
+              <span class="line-count">847 lines</span>
+            </div>
+            <div class="vs-code vs-code-clipped" set:html={beforeCode} />
+            <div class="vs-more">+ urls.py, tests.py, admin.py, migrations ...</div>
+          </div>
+          <div class="vs-side">
+            <div class="vs-label vs-label-good">
+              <span>Upjack / "Build me a CRM"</span>
+              <span class="line-count">1 sentence</span>
+            </div>
+            <div class="vs-code" set:html={afterCode} />
+          </div>
+        </div>
+      </section>
+
+      <!-- MID-PAGE CTA -->
+      <section class="mid-cta" aria-label="Get started">
+        <p>Convinced? One sentence. Zero boilerplate. Ship before standup.</p>
+        <div class="mid-cta-actions">
+          <a href="/quick-start/" class="btn-neon">Get Jacked</a>
+          <a href="/introduction/" class="btn-dark">Read The Docs</a>
+        </div>
+      </section>
+
+      <!-- ATTITUDE -->
+      <section class="attitude" aria-label="Testimonial">
+        <div class="attitude-quote">
+          "I SPENT 10 YEARS WRITING CRUD.<br />
+          <span class="neon">THEN I SAID 'BUILD ME A CRM'<br />AND WENT HOME EARLY."</span>
+        </div>
+        <p class="attitude-sub">
+          Upjack is for people who are done pretending that writing the same
+          serializer for the 10,000th time is "engineering."
+        </p>
+      </section>
+
+      <!-- FINAL CTA -->
+      <section class="final-cta" aria-label="Install">
+        <h2>GET<br />JACKED.</h2>
+        <p>Install the skill. Tell your agent. Ship before standup.</p>
+
+        <div class="terminal">
+          <div class="terminal-chrome">
+            <button class="terminal-tab" data-tab="claude-code">Claude Code</button>
+            <button class="terminal-tab" data-tab="codex">Codex</button>
+            <button class="terminal-tab" data-tab="cursor">Cursor</button>
+            <button class="terminal-tab" data-tab="windsurf">Windsurf</button>
+            <div class="terminal-sep"></div>
+            <button class="terminal-tab" data-tab="manual-py">Python</button>
+            <button class="terminal-tab" data-tab="manual-ts">TypeScript</button>
+            <button class="terminal-copy" aria-label="Copy commands">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          </div>
+          <div class="terminal-body">
+            <div class="t-content" data-for="agent-cli" set:html={agentCliContent} />
+            <div class="t-content" data-for="cursor" set:html={cursorContent} />
+            <div class="t-content" data-for="windsurf" set:html={windsurfContent} />
+            <div class="t-content" data-for="manual-py" set:html={manualPyContent} />
+            <div class="t-content" data-for="manual-ts" set:html={manualTsContent} />
+          </div>
+        </div>
+
+        <div class="cta-btns">
+          <a href="/quick-start/" class="btn-black">Quick Start</a>
+          <a href="/introduction/" class="btn-outline-black">Read The Docs</a>
+        </div>
+      </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer>
+      <a href="/" class="logo">UPJACK</a>
+      <div>
+        Apache 2.0 &middot; <a href="https://nimblebrain.ai">NimbleBrain</a> &middot; <a href="https://github.com/NimbleBrainInc/upjack">GitHub</a>
+      </div>
+    </footer>
+
+    <script>
+      function setAgent(agent) {
+        document.documentElement.setAttribute('data-agent', agent);
+      }
+
+      document.querySelectorAll('.terminal-tab').forEach(tab => {
+        tab.addEventListener('click', () => setAgent(tab.dataset.tab));
+      });
+
+      document.querySelectorAll('.terminal-copy').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const agent = document.documentElement.getAttribute('data-agent');
+          const terminal = btn.closest('.terminal');
+          const forVal = (agent === 'claude-code' || agent === 'codex') ? 'agent-cli' : agent;
+          const content = terminal.querySelector('.t-content[data-for="' + forVal + '"]');
+          if (!content) return;
+          navigator.clipboard.writeText(content.textContent.trim());
+          const svg = btn.querySelector('svg');
+          const orig = svg.innerHTML;
+          svg.innerHTML = '<polyline points="20 6 9 17 4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>';
+          setTimeout(() => { svg.innerHTML = orig; }, 1500);
+        });
+      });
+    </script>
+  </body>
+</html>

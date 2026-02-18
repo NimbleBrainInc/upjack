@@ -1,0 +1,197 @@
+{
+  "manifest_version": "0.4",
+  "name": "@nimblebraininc/crm",
+  "version": "1.0.0",
+  "description": "AI-native CRM for managing contacts, companies, deals, and pipelines",
+  "author": {
+    "name": "NimbleBrain Inc."
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server",
+    "mcp_config": {
+      "command": "python",
+      "args": ["server.py"]
+    }
+  },
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "upjack_version": "0.1",
+      "namespace": "apps/crm",
+      "display": {
+        "name": "CRM",
+        "icon": "\ud83d\udcca",
+        "category": "sales"
+      },
+      "entities": [
+        {
+          "name": "contact",
+          "plural": "contacts",
+          "schema": "schemas/contact.schema.json",
+          "prefix": "ct",
+          "index": true
+        },
+        {
+          "name": "company",
+          "plural": "companies",
+          "schema": "schemas/company.schema.json",
+          "prefix": "co",
+          "index": true
+        },
+        {
+          "name": "deal",
+          "plural": "deals",
+          "schema": "schemas/deal.schema.json",
+          "prefix": "dl",
+          "index": true
+        },
+        {
+          "name": "pipeline",
+          "schema": "schemas/pipeline.schema.json",
+          "prefix": "pl",
+          "singleton": true
+        },
+        {
+          "name": "activity",
+          "plural": "activities",
+          "schema": "schemas/activity.schema.json",
+          "prefix": "act",
+          "index": false
+        }
+      ],
+      "skills": [
+        {
+          "source": "bundled",
+          "path": "skills/lead-qualification/SKILL.md"
+        },
+        {
+          "source": "bundled",
+          "path": "skills/deal-forecasting/SKILL.md"
+        },
+        {
+          "source": "bundled",
+          "path": "skills/follow-up-email/SKILL.md"
+        },
+        {
+          "source": "mpak",
+          "name": "@nimblebraininc/email-writer",
+          "version": "^1.0.0"
+        }
+      ],
+      "bundles": {
+        "email": {
+          "description": "Email sending service for follow-ups and outreach",
+          "required": true,
+          "default": {
+            "name": "@nimblebraininc/aws-ses",
+            "version": "^0.2.0"
+          },
+          "alternatives": [
+            { "name": "@community/sendgrid", "version": "^1.0.0" },
+            { "name": "@community/resend", "version": "^2.0.0" }
+          ],
+          "tools_used": ["send_email"],
+          "config_map": {
+            "from_email": "sender_email",
+            "from_name": "sender_name"
+          }
+        },
+        "enrichment": {
+          "description": "Contact and company data enrichment",
+          "required": false,
+          "default": {
+            "name": "@nimblebraininc/clearbit",
+            "version": "^1.0.0"
+          },
+          "alternatives": [
+            { "name": "@community/apollo", "version": "^1.0.0" },
+            { "name": "@community/fullcontact", "version": "^2.0.0" }
+          ],
+          "tools_used": ["enrich_person", "enrich_company"]
+        },
+        "pdf": {
+          "description": "PDF generation for proposals and reports",
+          "required": false,
+          "default": {
+            "name": "@nimblebraininc/pdfco",
+            "version": "^0.1.0"
+          },
+          "tools_used": ["html_to_pdf", "merge_pdfs"]
+        }
+      },
+      "required_connections": [
+        {
+          "type": "email",
+          "required": true,
+          "purpose": "Send follow-up emails and outreach"
+        },
+        {
+          "type": "calendar",
+          "required": false,
+          "purpose": "Schedule meetings and track availability"
+        }
+      ],
+      "schedules": [
+        {
+          "name": "pipeline-review",
+          "cron": "0 9 * * 1-5",
+          "skill": "bundled:deal-forecasting",
+          "description": "Daily pipeline review and deal forecasting (weekdays 9 AM)"
+        },
+        {
+          "name": "stale-deal-alert",
+          "cron": "0 10 * * 1",
+          "skill": "bundled:follow-up-email",
+          "description": "Weekly alert for stale deals (Monday 10 AM)"
+        },
+        {
+          "name": "lead-scoring",
+          "cron": "0 2 * * *",
+          "skill": "bundled:lead-qualification",
+          "description": "Nightly lead scoring refresh"
+        }
+      ],
+      "hooks": [
+        {
+          "event": "entity.created",
+          "entity": "contact",
+          "skill": "bundled:lead-qualification"
+        },
+        {
+          "event": "entity.updated",
+          "entity": "deal",
+          "condition": "$.stage == 'closed-won'",
+          "skill": "bundled:deal-forecasting"
+        }
+      ],
+      "views": [
+        {
+          "name": "hot-leads",
+          "entity": "contact",
+          "description": "Contacts with lead score >= 80, sorted by score descending",
+          "filter": "$.lead_score >= 80",
+          "sort": "-lead_score"
+        },
+        {
+          "name": "stale-deals",
+          "entity": "deal",
+          "description": "Active deals not updated in 14+ days",
+          "filter": "$.status == 'active'",
+          "sort": "updated_at"
+        },
+        {
+          "name": "weekly-pipeline",
+          "entity": "deal",
+          "description": "All active deals sorted by pipeline stage order",
+          "filter": "$.status == 'active'",
+          "sort": "stage_order"
+        }
+      ],
+      "context": "context.md",
+      "seed": {
+        "data": "seed/",
+        "run_on_install": true
+      }
+    }
+  }
+}

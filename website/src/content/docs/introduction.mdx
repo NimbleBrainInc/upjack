@@ -1,0 +1,127 @@
+---
+title: Introduction
+description: What is Upjack, a framework for building AI-powered apps by describing your domain, not writing code.
+draft: false
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Upjack lets you build AI-powered applications by describing your domain instead of writing code. The fastest way to start is with the app-builder skill — install it, tell your agent what you want, and you have a running app:
+
+```bash
+npm install -g @nimblebraininc/mpak
+mpak skill install @nimblebraininc/upjack-app-builder
+```
+
+```
+claude > Build me a CRM app
+```
+
+The agent generates a complete app: manifest, entity schemas, skills, context, seed data, and a server entry point. Run it and you're done.
+
+For those who want to build by hand, Upjack's core is a JSON Schema for your data and Markdown for your domain expertise:
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack import UpjackApp
+
+    app = UpjackApp.from_manifest("manifest.json")
+
+    contact = app.create_entity("contact", {"name": "Alice", "email": "alice@example.com"})
+    results = app.search_entities("contact", query="alice")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { UpjackApp } from "upjack";
+
+    const app = UpjackApp.fromManifest("manifest.json");
+
+    const contact = app.createEntity("contact", { name: "Alice", email: "alice@example.com" });
+    const results = app.searchEntities("contact", { query: "alice" });
+    ```
+  </TabItem>
+</Tabs>
+
+No API code. No database. No deployment config.
+
+## What You Get
+
+For each entity you define, Upjack provides:
+
+- **6 MCP tools per entity**: `create_contact`, `get_contact`, `update_contact`, `list_contacts`, `search_contacts`, `delete_contact`
+- **Schema validation** on every write. Invalid data never hits storage.
+- **Type-prefixed IDs** like `ct_01HZ3QKB...` so you know it's a contact at a glance
+- **Full-text search** across all string fields
+- **JSON file storage** in a git-friendly directory structure
+- **Skills as resources**: your Markdown expertise files are served to the agent via `upjack://skills/*`
+
+Define a `contact` entity schema and a `lead-qualification` skill in Markdown, and your AI agent immediately knows how to create contacts, qualify leads, and follow up, all from two files.
+
+## Key Concepts
+
+**Entity**
+A typed data record with a JSON Schema. Every entity gets a type-prefixed [ULID](https://github.com/ulid/spec) (for example, `ct_01HZ3QKB...` for contacts, `dl_01HZ4RMN...` for deals). Entities are stored as individual JSON files and validated at write time.
+
+**Skill**
+A Markdown document encoding domain expertise: scoring rubrics, decision criteria, procedures. The AI agent reads skills and applies them through reasoning.
+
+**Manifest**
+A JSON declaration that wires entities to skills, defines hooks (react to data changes), schedules (cron triggers), views (named queries), and bundle dependencies (external tools declared by capability alias).
+
+**Bundle Dependency**
+An external tool provider declared by alias (for example, `email`) with a compatibility contract (`tools_used` array). Swap the underlying package without touching skills or schemas.
+
+## Three Tiers
+
+Upjack meets you where you are. Start at the first tier and move up only when you need to.
+
+| Tier | What You Do | What Upjack Provides |
+|------|------------|---------------------------|
+| **Schemas + Skills** | JSON Schema + Markdown | Entity management, storage, validation |
+| **MCP Server** | `create_server(manifest)` | Full MCP server with CRUD tools, resources |
+| **Custom Server** | Custom MCP server + your logic | Entity management + your custom tools |
+
+At the first tier, you write only declarative files and get a working application. At the second, a single function call wraps everything in an MCP server:
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack.server import create_server
+
+    mcp = create_server("manifest.json")
+    mcp.run()
+    # Tools: create_contact, get_contact, update_contact, list_contacts, search_contacts, delete_contact
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { startServer } from "upjack/server";
+
+    startServer("manifest.json");
+    // Tools: create_contact, get_contact, update_contact, list_contacts, search_contacts, delete_contact
+    ```
+  </TabItem>
+</Tabs>
+
+At the third tier, you build a custom MCP server and use Upjack's entity management alongside your own tools.
+
+## Prerequisites
+
+You do not need deep knowledge of these to get started, but they are helpful context:
+
+| Concept | What It Is | Learn More |
+|---------|-----------|------------|
+| [JSON Schema](https://json-schema.org/learn) | A standard for describing the shape of JSON data. Upjack uses it to define what each entity looks like. | [Getting Started](https://json-schema.org/learn/getting-started-step-by-step) |
+| [MCP](https://modelcontextprotocol.io) | Model Context Protocol — a standard that lets AI agents call tools and read resources. Upjack can expose your app as an MCP server so agents can interact with it. | [Introduction](https://modelcontextprotocol.io/introduction) |
+| [MCPB](https://github.com/modelcontextprotocol/mcpb) | MCP Bundle — a packaging format for distributing MCP servers. Upjack apps use the MCPB manifest format, with upjack-specific config in a `_meta` extension field. | [Spec](https://github.com/modelcontextprotocol/mcpb) |
+| [ULID](https://github.com/ulid/spec) | Universally Unique Lexicographically Sortable Identifier — like a UUID but sortable by creation time. Upjack uses prefixed ULIDs as entity IDs. | [Spec](https://github.com/ulid/spec) |
+
+## Next Steps
+
+- [Quick Start](/quick-start/): Two paths — agent-built or manual — both under 5 minutes
+- [Build a Todo App](/tutorials/todo-app/): Step-by-step tutorial building a complete application
+- [Architecture](/concepts/architecture/): How Upjack works under the hood
+- [Python Library](/libraries/python/): Python API reference
+- [TypeScript Library](/libraries/typescript/): TypeScript API reference

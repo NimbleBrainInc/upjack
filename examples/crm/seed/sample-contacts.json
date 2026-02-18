@@ -1,0 +1,26 @@
+[
+  {
+    "type": "contact",
+    "version": 1,
+    "first_name": "Sarah",
+    "last_name": "Chen",
+    "email": "sarah.chen@acmecorp.com",
+    "title": "VP of Engineering",
+    "company_name": "Acme Corp",
+    "lifecycle_stage": "lead",
+    "tags": ["decision-maker", "inbound"],
+    "notes": "Met at AI Summit 2026. Interested in agent automation for their dev team."
+  },
+  {
+    "type": "contact",
+    "version": 1,
+    "first_name": "James",
+    "last_name": "Park",
+    "email": "james.park@acmecorp.com",
+    "title": "Engineering Manager",
+    "company_name": "Acme Corp",
+    "lifecycle_stage": "subscriber",
+    "tags": ["technical-evaluator"],
+    "notes": "Reports to Sarah. Will lead technical evaluation."
+  }
+]

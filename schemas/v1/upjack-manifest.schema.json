@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://upjack.dev/schemas/v1/upjack-manifest.schema.json",
+  "title": "Upjack Manifest",
+  "description": "Schema for the _meta[\"ai.nimblebrain/upjack\"] block in MCPB manifest.json. Defines the structure of a NimbleBrain Upjack app.",
+  "type": "object",
+  "properties": {
+    "upjack_version": {
+      "type": "string",
+      "description": "Upjack schema version",
+      "const": "0.1"
+    },
+    "namespace": {
+      "type": "string",
+      "description": "Install path in tenant workspace (e.g., 'apps/crm')",
+      "pattern": "^apps/[a-z][a-z0-9-]*$"
+    },
+    "display": {
+      "type": "object",
+      "description": "Human-readable display metadata",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable app name",
+          "maxLength": 64
+        },
+        "icon": {
+          "type": "string",
+          "description": "Emoji or single character icon",
+          "maxLength": 8
+        },
+        "category": {
+          "type": "string",
+          "description": "Primary app category",
+          "enum": [
+            "sales",
+            "marketing",
+            "operations",
+            "research",
+            "finance",
+            "hr",
+            "engineering",
+            "support",
+            "custom"
+          ]
+        }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "description": "Entity type definitions for this app",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/EntityDefinition"
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Skill references (from mpak, GitHub, or bundled in the package)",
+      "items": {
+        "$ref": "#/$defs/SkillReference"
+      }
+    },
+    "bundles": {
+      "type": "object",
+      "description": "MCPB bundle dependencies keyed by logical alias",
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "$ref": "#/$defs/BundleDependency"
+        }
+      },
+      "additionalProperties": false
+    },
+    "required_tools": {
+      "type": "array",
+      "description": "Platform or tenant tools required by this app",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_connections": {
+      "type": "array",
+      "description": "OAuth connections required by this app",
+      "items": {
+        "$ref": "#/$defs/ConnectionRequirement"
+      }
+    },
+    "schedules": {
+      "type": "array",
+      "description": "Cron-triggered skill invocations",
+      "items": {
+        "$ref": "#/$defs/Schedule"
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "description": "Reactive behaviors triggered by data changes",
+      "items": {
+        "$ref": "#/$defs/Hook"
+      }
+    },
+    "views": {
+      "type": "array",
+      "description": "Named queries the agent materializes",
+      "items": {
+        "$ref": "#/$defs/View"
+      }
+    },
+    "context": {
+      "type": "string",
+      "description": "Path to markdown file with domain knowledge (relative to package root)"
+    },
+    "seed": {
+      "type": "object",
+      "description": "Initial data to populate on install",
+      "properties": {
+        "data": {
+          "type": "string",
+          "description": "Path to seed data directory or file"
+        },
+        "run_on_install": {
+          "type": "boolean",
+          "description": "Whether to automatically seed data on install",
+          "default": true
+        }
+      },
+      "required": ["data"]
+    }
+  },
+  "required": ["upjack_version", "namespace", "entities"],
+  "$defs": {
+    "EntityDefinition": {
+      "type": "object",
+      "description": "Defines an entity type within the app",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Entity type name (lowercase, underscores allowed)",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "plural": {
+          "type": "string",
+          "description": "Plural form for directory naming. Defaults to name + 's'."
+        },
+        "schema": {
+          "type": "string",
+          "description": "Path to JSON Schema file (relative to package root)"
+        },
+        "prefix": {
+          "type": "string",
+          "description": "2-4 character prefix for ULID-based entity IDs",
+          "pattern": "^[a-z]{2,4}$"
+        },
+        "storage": {
+          "type": "string",
+          "description": "Storage path relative to namespace. Defaults to 'data/{plural}/'.",
+          "default": "data/{plural}/"
+        },
+        "index": {
+          "type": "boolean",
+          "description": "Whether to include this entity type in the full-text search index",
+          "default": true
+        },
+        "singleton": {
+          "type": "boolean",
+          "description": "Whether only one record of this type can exist",
+          "default": false
+        }
+      },
+      "required": ["name", "schema", "prefix"]
+    },
+    "SkillReference": {
+      "description": "Reference to a skill from mpak registry, GitHub, or bundled in the package",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Skill from mpak registry",
+          "properties": {
+            "source": {
+              "const": "mpak"
+            },
+            "name": {
+              "type": "string",
+              "description": "Scoped skill name (e.g., '@nimblebraininc/email-writer')",
+              "pattern": "^@[a-z0-9-]+/[a-z0-9-]+$"
+            },
+            "version": {
+              "type": "string",
+              "description": "Semver version range"
+            },
+            "integrity": {
+              "type": "string",
+              "description": "SHA256 integrity hash",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            }
+          },
+          "required": ["source", "name", "version"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Skill from GitHub repository",
+          "properties": {
+            "source": {
+              "const": "github"
+            },
+            "repo": {
+              "type": "string",
+              "description": "GitHub repository (owner/repo)",
+              "pattern": "^[\\w.-]+/[\\w.-]+$"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path to SKILL.md in the repository"
+            },
+            "ref": {
+              "type": "string",
+              "description": "Git ref (branch, tag, or commit SHA)"
+            }
+          },
+          "required": ["source", "repo", "path"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Skill bundled within the MCPB package",
+          "properties": {
+            "source": {
+              "const": "bundled"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path to SKILL.md within the package"
+            }
+          },
+          "required": ["source", "path"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "BundleDependency": {
+      "type": "object",
+      "description": "An MCPB bundle dependency aliased for swappability",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this dependency provides"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this dependency is required for the app to function",
+          "default": true
+        },
+        "default": {
+          "type": "object",
+          "description": "Recommended package for this dependency slot",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "MCPB package name"
+            },
+            "version": {
+              "type": "string",
+              "description": "Semver version range"
+            }
+          },
+          "required": ["name", "version"]
+        },
+        "alternatives": {
+          "type": "array",
+          "description": "Alternative packages that can fill this slot",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "version"]
+          }
+        },
+        "tools_used": {
+          "type": "array",
+          "description": "Tool names the app calls from this bundle (compatibility contract)",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "config_map": {
+          "type": "object",
+          "description": "Maps app-level user_config values to the bundle's config keys",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["description", "default", "tools_used"]
+    },
+    "ConnectionRequirement": {
+      "type": "object",
+      "description": "An OAuth connection the app needs",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Connection type (e.g., 'email', 'calendar', 'slack')"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this connection is required",
+          "default": true
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Why the app needs this connection"
+        }
+      },
+      "required": ["type"]
+    },
+    "Schedule": {
+      "type": "object",
+      "description": "A cron-triggered skill invocation",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Schedule identifier",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "cron": {
+          "type": "string",
+          "description": "5-field cron expression (tenant timezone)"
+        },
+        "skill": {
+          "type": "string",
+          "description": "Skill to invoke (scoped name or 'bundled:{name}')"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this schedule does"
+        },
+        "enabled_by_default": {
+          "type": "boolean",
+          "description": "Whether this schedule is active on install",
+          "default": true
+        }
+      },
+      "required": ["name", "cron", "skill"]
+    },
+    "Hook": {
+      "type": "object",
+      "description": "A reactive behavior triggered by data changes",
+      "properties": {
+        "event": {
+          "type": "string",
+          "description": "Event that triggers this hook",
+          "enum": [
+            "entity.created",
+            "entity.updated",
+            "entity.deleted",
+            "entity.status_changed",
+            "app.installed",
+            "app.updated"
+          ]
+        },
+        "entity": {
+          "type": "string",
+          "description": "Filter to a specific entity type (omit for all)"
+        },
+        "condition": {
+          "type": "string",
+          "description": "JSONPath expression for conditional triggering"
+        },
+        "skill": {
+          "type": "string",
+          "description": "Skill to invoke when triggered"
+        }
+      },
+      "required": ["event", "skill"]
+    },
+    "View": {
+      "type": "object",
+      "description": "A named query the agent materializes",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "View identifier",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "entity": {
+          "type": "string",
+          "description": "Primary entity type for this view"
+        },
+        "description": {
+          "type": "string",
+          "description": "Natural language description of what this view shows"
+        },
+        "filter": {
+          "type": "string",
+          "description": "JSONPath filter expression"
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort expression (e.g., '-updated_at', 'lead_score')"
+        },
+        "storage": {
+          "type": "string",
+          "description": "Storage path for materialized view data",
+          "default": "views/"
+        }
+      },
+      "required": ["name", "entity", "description"]
+    }
+  }
+}

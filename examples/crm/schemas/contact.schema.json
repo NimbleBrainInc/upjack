@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CRM Contact",
+  "description": "A person tracked in the CRM",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "first_name": {
+      "type": "string",
+      "description": "Contact's first name"
+    },
+    "last_name": {
+      "type": "string",
+      "description": "Contact's last name"
+    },
+    "email": {
+      "type": "string",
+      "description": "Primary email address",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Phone number"
+    },
+    "title": {
+      "type": "string",
+      "description": "Job title"
+    },
+    "company_name": {
+      "type": "string",
+      "description": "Company name (denormalized for quick access)"
+    },
+    "linkedin_url": {
+      "type": "string",
+      "description": "LinkedIn profile URL",
+      "format": "uri"
+    },
+    "lead_score": {
+      "type": "integer",
+      "description": "Lead qualification score (0-100)",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "lifecycle_stage": {
+      "type": "string",
+      "description": "Current stage in the sales lifecycle",
+      "enum": ["subscriber", "lead", "mql", "sql", "opportunity", "customer", "evangelist"]
+    },
+    "last_contacted": {
+      "type": "string",
+      "description": "When the contact was last reached out to",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-text notes about this contact"
+    }
+  },
+  "required": ["first_name", "last_name"]
+}

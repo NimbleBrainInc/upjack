@@ -1,0 +1,27 @@
+[
+  {
+    "type": "topic",
+    "version": 1,
+    "title": "AI Agent Frameworks Comparison",
+    "description": "Compare current AI agent frameworks (LangGraph, CrewAI, AutoGen, custom) for enterprise use cases",
+    "priority": "high",
+    "key_questions": [
+      "Which frameworks support deterministic workflows?",
+      "How do they handle tool calling and error recovery?",
+      "What are the deployment and scaling patterns?",
+      "Which have the strongest enterprise adoption?"
+    ]
+  },
+  {
+    "type": "topic",
+    "version": 1,
+    "title": "MCP Protocol Adoption Trends",
+    "description": "Track adoption of the Model Context Protocol across AI tools and platforms",
+    "priority": "medium",
+    "key_questions": [
+      "Which major platforms support MCP?",
+      "What are the common server patterns?",
+      "How is the ecosystem evolving?"
+    ]
+  }
+]

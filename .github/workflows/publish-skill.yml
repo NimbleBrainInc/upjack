@@ -1,0 +1,45 @@
+name: Publish Skill
+
+on:
+  push:
+    tags:
+      - 'skill-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches skill version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/skill-v}"
+          SKILL_VERSION=$(cat skills/upjack-app-builder/version.txt | tr -d '[:space:]')
+          if [ "$TAG_VERSION" != "$SKILL_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != version.txt ($SKILL_VERSION)"
+            exit 1
+          fi
+
+      - name: Pack skill
+        uses: NimbleBrainInc/skill-pack@v1
+        with:
+          skill-dir: skills/upjack-app-builder
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" \
+            --title "Skill $TAG" \
+            --generate-notes \
+            skills/upjack-app-builder/*.skill || true
+
+      - name: Announce to mpak registry
+        uses: NimbleBrainInc/skill-pack@v1
+        with:
+          skill-dir: skills/upjack-app-builder
+          announce: true

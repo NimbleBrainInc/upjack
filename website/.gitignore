@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.astro/
+public/schemas/
+public/logo-preview*.html
+public/og-image.html
+public/readme-banner.html

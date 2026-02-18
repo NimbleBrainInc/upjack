@@ -1,0 +1,361 @@
+---
+title: Build a Todo App
+description: "Step-by-step tutorial: build a personal task manager with Upjack in 5 minutes."
+draft: false
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This tutorial walks you through building a personal task manager with NimbleBrain Upjack. By the end, you'll have a working MCP server that any AI agent can use to create, search, and manage your tasks.
+
+**What you'll build:** A todo app with tasks, projects, and labels, complete with priority scoring, daily review skills, and seed data.
+
+<Tabs>
+  <TabItem label="Python">
+    **What you need:** Python >= 3.13 and [uv](https://docs.astral.sh/uv/) (or pip).
+  </TabItem>
+  <TabItem label="TypeScript">
+    **What you need:** Node.js >= 18 and npm.
+  </TabItem>
+</Tabs>
+
+## Step 1: Install upjack
+
+<Tabs>
+  <TabItem label="Python">
+    ```bash
+    uv add upjack
+    # or: pip install upjack
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```bash
+    npm install upjack
+    ```
+  </TabItem>
+</Tabs>
+
+## Step 2: Scaffold the app
+
+<Tabs>
+  <TabItem label="Python">
+    ```bash
+    upjack init --name todo --entity task
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```bash
+    npx upjack init --name todo --entity task
+    ```
+  </TabItem>
+</Tabs>
+
+This creates a `todo/` directory with a manifest, a starter schema, a server entry point, and seed data. We'll customize each file.
+
+## Step 3: Define the task schema
+
+Open `todo/schemas/task.schema.json` and replace its contents with:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Todo Task",
+  "description": "A task to be completed",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Short summary of what needs to be done"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed notes about the task"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "none"],
+      "default": "none",
+      "description": "Task priority level"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date by which the task should be completed"
+    },
+    "effort": {
+      "type": "string",
+      "enum": ["trivial", "small", "medium", "large", "epic"],
+      "description": "Estimated effort to complete"
+    }
+  },
+  "required": ["title"]
+}
+```
+
+**What's happening:** The `allOf` composition layers your task fields on top of Upjack's base entity schema, which adds `id`, `type`, `version`, `created_at`, `updated_at`, `status`, and `tags` automatically. You only define the fields specific to your domain.
+
+The `required: ["title"]` means a task must have a title. Upjack validates this on every create and update call.
+
+## Step 4: Update the manifest
+
+Open `todo/manifest.json` and update the upjack extension:
+
+```json
+{
+  "manifest_version": "0.4",
+  "name": "todo",
+  "version": "0.1.0",
+  "title": "Todo List",
+  "description": "A personal task manager",
+  "server": {
+    "type": "python",
+    "entry_point": "server",
+    "mcp_config": {
+      "command": "python",
+      "args": ["server.py"]
+    }
+  },
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "upjack_version": "0.1",
+      "namespace": "apps/todo",
+      "entities": [
+        {
+          "name": "task",
+          "plural": "tasks",
+          "schema": "schemas/task.schema.json",
+          "prefix": "tsk",
+          "index": true
+        }
+      ],
+      "context": "context.md",
+      "seed": {
+        "data": "seed/",
+        "run_on_install": true
+      }
+    }
+  }
+}
+```
+
+**Key fields:**
+- `namespace: "apps/todo"`: entity files are stored at `workspace/apps/todo/data/tasks/`
+- `prefix: "tsk"`: generated IDs look like `tsk_01HZ3QKB...`
+- `context`: points to a Markdown file with domain knowledge for the agent
+
+## Step 5: Write domain knowledge
+
+Open `todo/context.md` and write what your agent needs to know:
+
+```markdown
+# Todo List
+
+You are managing a personal todo list. Help the user stay organized and prioritize effectively.
+
+## Task Lifecycle
+
+1. Created (status: active, priority assigned)
+2. Worked on (updated with progress notes)
+3. Completed (status: archived)
+
+## Prioritization
+
+- **Critical**: Urgent and important — do first
+- **High**: Important but not urgent — schedule time
+- **Medium**: Moderately important — fit in when possible
+- **Low**: Nice to have — do if time permits
+
+## Rules
+
+- Keep task titles short and actionable (start with a verb)
+- One task per action — break large tasks into smaller ones
+- Archive completed tasks, don't delete them (preserves history)
+```
+
+The agent receives this file as an MCP resource (`upjack://context`) and uses it to understand how your app works.
+
+## Step 6: Add seed data
+
+Update `todo/seed/sample-tasks.json`:
+
+```json
+[
+  {
+    "type": "task",
+    "title": "Review project proposal",
+    "priority": "high",
+    "effort": "medium",
+    "due_date": "2026-03-01"
+  },
+  {
+    "type": "task",
+    "title": "Fix login bug",
+    "priority": "critical",
+    "effort": "small",
+    "tags": ["bug"]
+  },
+  {
+    "type": "task",
+    "title": "Write onboarding docs",
+    "priority": "medium",
+    "effort": "large"
+  }
+]
+```
+
+Seed data loads when the agent calls the `seed_data` tool. Upjack generates IDs, timestamps, and validates each record against your schema.
+
+## Step 7: Run it
+
+<Tabs>
+  <TabItem label="Python">
+    ```bash
+    cd todo
+    uv run python server.py
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```bash
+    cd todo
+    npx tsx server.ts
+    ```
+  </TabItem>
+</Tabs>
+
+Your MCP server is running. It exposes these tools:
+
+| Tool | What it does |
+|------|-------------|
+| `create_task` | Create a new task (validates against your schema) |
+| `get_task` | Get a task by ID (`tsk_...`) |
+| `update_task` | Update task fields (merges by default) |
+| `list_tasks` | List active tasks (newest first) |
+| `search_tasks` | Search tasks by text or structured filters |
+| `delete_task` | Soft-delete a task (set status to "deleted") |
+| `seed_data` | Load sample data from seed/ |
+
+And these resources:
+
+| Resource | What it provides |
+|----------|-----------------|
+| `upjack://context` | Your context.md domain knowledge |
+
+## Step 8: Try it
+
+You don't need an MCP server to use Upjack. Use `UpjackApp` directly:
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack import UpjackApp
+
+    app = UpjackApp.from_manifest("manifest.json")
+
+    # Create a task
+    task = app.create_entity("task", {
+        "title": "Ship todo app",
+        "priority": "critical",
+        "effort": "small",
+        "due_date": "2026-03-01",
+    })
+    print(task["id"])      # tsk_01HZ3QKB9YWVJ0RPFA7MT8C5X
+    print(task["status"])  # active
+
+    # Search for it
+    results = app.search_entities("task", query="ship")
+    print(len(results))    # 1
+
+    # Update priority
+    app.update_entity("task", task["id"], {"priority": "high"})
+
+    # List all active tasks
+    tasks = app.list_entities("task")
+    for t in tasks:
+        print(f"{t['id']}: {t['title']} [{t.get('priority', 'none')}]")
+    ```
+
+    Every operation validates against your JSON Schema. Try creating a task with an invalid priority:
+
+    ```python
+    # This raises jsonschema.ValidationError
+    app.create_entity("task", {"title": "Bad task", "priority": "URGENT"})
+    # ValidationError: 'URGENT' is not one of ['critical', 'high', 'medium', 'low', 'none']
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { UpjackApp } from "upjack";
+
+    const app = UpjackApp.fromManifest("manifest.json");
+
+    // Create a task
+    const task = app.createEntity("task", {
+      title: "Ship todo app",
+      priority: "critical",
+      effort: "small",
+      due_date: "2026-03-01",
+    });
+    console.log(task.id);      // tsk_01HZ3QKB9YWVJ0RPFA7MT8C5X
+    console.log(task.status);  // active
+
+    // Search for it
+    const results = app.searchEntities("task", { query: "ship" });
+    console.log(results.length);  // 1
+
+    // Update priority
+    app.updateEntity("task", task.id, { priority: "high" });
+
+    // List all active tasks
+    const tasks = app.listEntities("task");
+    for (const t of tasks) {
+      console.log(`${t.id}: ${t.title} [${t.priority ?? "none"}]`);
+    }
+    ```
+
+    Every operation validates against your JSON Schema. Try creating a task with an invalid priority:
+
+    ```typescript
+    // This throws an Error with validation details
+    app.createEntity("task", { title: "Bad task", priority: "URGENT" });
+    // Error: Validation failed: 'URGENT' is not one of ['critical', 'high', 'medium', 'low', 'none']
+    ```
+  </TabItem>
+</Tabs>
+
+## Going further
+
+**Add more entity types.** Want projects and labels? Add entries to the `entities` array in the manifest and create their schemas. Upjack generates 6 MCP tools per entity type, so 3 entity types gives you 18 tools.
+
+**Add skills.** Write a `skills/task-management/SKILL.md` with prioritization rubrics, daily review procedures, or escalation criteria. Reference it in the manifest and it becomes a `upjack://skills/task-management` resource the agent can read.
+
+**Add hooks and schedules.** Declare a hook that fires `task-management` when a new task is created, or a schedule that runs a daily review at 9 AM. These are declarative metadata. The NimbleBrain platform executes them, or you can read them from the manifest and wire them up yourself.
+
+**Use structured search.** Upjack supports comparison operators:
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    # Find high-priority tasks due this week
+    app.search_entities("task", filter={
+        "priority": {"$in": ["critical", "high"]},
+        "due_date": {"$lte": "2026-03-07"},
+    })
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // Find high-priority tasks due this week
+    app.searchEntities("task", {
+      filter: {
+        priority: { $in: ["critical", "high"] },
+        due_date: { $lte: "2026-03-07" },
+      },
+    });
+    ```
+  </TabItem>
+</Tabs>
+
+See the full [examples/todo/](https://github.com/NimbleBrainInc/upjack/tree/main/examples/todo/) directory for a complete implementation with projects, labels, skills, hooks, schedules, and views.

@@ -1,0 +1,41 @@
+[
+  {
+    "type": "task",
+    "version": 1,
+    "title": "Draft Q1 roadmap",
+    "description": "Outline key milestones and deliverables for Q1. Share with the team for feedback.",
+    "priority": "high",
+    "due_date": "2026-03-01",
+    "effort": "medium",
+    "project_name": "Planning",
+    "tags": ["sample"]
+  },
+  {
+    "type": "task",
+    "version": 1,
+    "title": "Review pull request #42",
+    "description": "Review the authentication refactor PR. Check for security implications.",
+    "priority": "critical",
+    "due_date": "2026-02-23",
+    "effort": "small",
+    "tags": ["sample", "code-review"]
+  },
+  {
+    "type": "task",
+    "version": 1,
+    "title": "Update team wiki with onboarding steps",
+    "description": "Document the new dev environment setup process for incoming team members.",
+    "priority": "medium",
+    "effort": "medium",
+    "project_name": "Documentation",
+    "tags": ["sample"]
+  },
+  {
+    "type": "task",
+    "version": 1,
+    "title": "Schedule dentist appointment",
+    "priority": "low",
+    "effort": "trivial",
+    "tags": ["sample", "personal"]
+  }
+]

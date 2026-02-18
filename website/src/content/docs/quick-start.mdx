@@ -1,0 +1,287 @@
+---
+title: Quick Start
+description: Build an Upjack app in under 5 minutes — let your agent do the work, or build it by hand.
+draft: false
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Two ways to get started. Pick the one that fits.
+
+## The Fast Way: Let Your Agent Build It
+
+Install the skill, describe what you want, and let your agent generate a complete app.
+
+### Prerequisites
+
+You need [Node.js](https://nodejs.org/) (v18+) and [mpak](https://mpak.dev) installed:
+
+```bash
+npm install -g @nimblebraininc/mpak
+```
+
+### 1. Install the skill
+
+```bash
+npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder
+```
+
+### 2. Tell your agent what you want
+
+```
+claude > Build me a CRM app
+```
+
+The agent generates a complete app directory:
+
+```
+my-crm/
+  manifest.json               # Wiring: entities, skills, hooks, schedules
+  schemas/
+    contact.schema.json        # Entity definitions (JSON Schema)
+    company.schema.json
+    deal.schema.json
+  skills/
+    lead-qualification/
+      SKILL.md                 # Domain expertise the agent reads
+  context.md                   # Background knowledge
+  seed/
+    sample-contacts.json       # Initial data
+  server.py                    # MCP server entry point
+```
+
+Every file is ready to use — schemas define your data model, skills encode your domain expertise, the manifest wires it all together, and the server exposes everything as MCP tools.
+
+### 3. Run it
+
+<Tabs>
+  <TabItem label="Python">
+    ```bash
+    cd my-crm
+    uv sync
+    python server.py
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```bash
+    cd my-crm
+    npm install
+    npx tsx server.ts
+    ```
+  </TabItem>
+</Tabs>
+
+Done. Your agent now has tools like `create_contact`, `list_contacts`, and `search_contacts`, plus resources for your domain knowledge and skills.
+
+---
+
+## The Manual Way: Build It Yourself
+
+If you prefer to understand every file, this path walks through creating an app from scratch.
+
+### 1. Install
+
+<Tabs>
+  <TabItem label="Python">
+    ```bash
+    uv add upjack    # or: pip install upjack
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```bash
+    npm install upjack
+    ```
+  </TabItem>
+</Tabs>
+
+### 2. Create a manifest
+
+`manifest.json` follows the [MCPB](https://github.com/modelcontextprotocol/mcpb) package format. The upjack-specific configuration lives inside `_meta["ai.nimblebrain/upjack"]`, which MCPB treats as opaque vendor metadata. Non-MCPB-aware tools can install an Upjack app as a regular MCP server and ignore the extension entirely.
+
+```json
+{
+  "manifest_version": "0.4",
+  "name": "my-notes-app",
+  "version": "0.1.0",
+  "title": "Notes",
+  "server": null,
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "upjack_version": "0.1",
+      "namespace": "apps/notes",
+      "entities": [
+        {
+          "name": "note",
+          "plural": "notes",
+          "prefix": "nt",
+          "schema": "schemas/note.schema.json"
+        }
+      ]
+    }
+  }
+}
+```
+
+The **namespace** (`apps/notes`) determines where entity files are stored on disk. The **prefix** (`nt`) is prepended to generated IDs, so you can identify entity types at a glance (for example, `nt_01HZ3QKB...` is a note).
+
+### 3. Create an entity schema
+
+Create `schemas/note.schema.json`. This is a standard JSON Schema (draft 2020-12) describing the shape of a note:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "body": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["title"]
+}
+```
+
+The schema defines what fields a note can have and which are required. Upjack validates every write against this schema, so invalid data never reaches storage.
+
+### 4. Use it
+
+With the manifest and schema in place, you can start managing entities immediately:
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack import UpjackApp
+
+    app = UpjackApp.from_manifest("manifest.json")
+
+    # Create an entity
+    note = app.create_entity("note", {"title": "Hello", "body": "My first note"})
+    print(note["id"])    # nt_01HZ3QKB9YWVJ0RPFA7MT8C5X
+    print(note["type"])  # note
+
+    # List entities
+    notes = app.list_entities("note")
+
+    # Search
+    results = app.search_entities("note", query="hello")
+
+    # Update
+    app.update_entity("note", note["id"], {"body": "Updated body"})
+
+    # Delete (soft delete by default)
+    app.delete_entity("note", note["id"])
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { UpjackApp } from "upjack";
+
+    const app = UpjackApp.fromManifest("manifest.json");
+
+    // Create an entity
+    const note = app.createEntity("note", { title: "Hello", body: "My first note" });
+    console.log(note.id);    // nt_01HZ3QKB9YWVJ0RPFA7MT8C5X
+    console.log(note.type);  // note
+
+    // List entities
+    const notes = app.listEntities("note");
+
+    // Search
+    const results = app.searchEntities("note", { query: "hello" });
+
+    // Update
+    app.updateEntity("note", note.id, { body: "Updated body" });
+
+    // Delete (soft delete by default)
+    app.deleteEntity("note", note.id);
+    ```
+  </TabItem>
+</Tabs>
+
+**What happened:** The library created a JSON file at `./apps/notes/data/notes/nt_01HZ3QKB....json` containing your note with an auto-generated ID, timestamps, and the data you provided. The path comes from the `namespace` and `plural` fields in your manifest.
+
+Soft-deleting sets `status` to `"deleted"` but keeps the file on disk. Pass `hard=True` (Python) or `hard: true` (TypeScript) to remove it permanently.
+
+### 5. (Optional) Serve as an MCP server
+
+To expose your app as an MCP server that AI agents can connect to:
+
+<Tabs>
+  <TabItem label="Python">
+    Install with MCP support:
+
+    ```bash
+    uv add "upjack[mcp]"
+    ```
+
+    Then create a server with a single function call:
+
+    ```python
+    from upjack.server import create_server
+
+    mcp = create_server("manifest.json")
+    mcp.run()
+    # Exposes: create_note, get_note, update_note, list_notes, search_notes, delete_note
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    The MCP SDK is a peer dependency. Install it alongside upjack:
+
+    ```bash
+    npm install @modelcontextprotocol/sdk
+    ```
+
+    Then create a server with a single function call:
+
+    ```typescript
+    import { startServer } from "upjack/server";
+
+    startServer("manifest.json");
+    // Exposes: create_note, get_note, update_note, list_notes, search_notes, delete_note
+    ```
+  </TabItem>
+</Tabs>
+
+The server automatically generates six tools for each entity defined in your manifest, plus resources for your context and skills.
+
+### 6. Connect to your agent
+
+Upjack apps are [MCPB](https://github.com/modelcontextprotocol/mcpb) bundles. Use [mpak](https://mpak.dev) to run them with any MCP-compatible client.
+
+Connect your published bundle (or a local `.mcpb` file) to your agent:
+
+**Claude Code**
+
+```bash
+claude mcp add my-notes-app -- npx @nimblebraininc/mpak run @yourorg/my-notes-app
+```
+
+**Claude Desktop / Cursor / Windsurf:** add to your MCP config file (`claude_desktop_config.json`, `.cursor/mcp.json`, etc.):
+
+```json
+{
+  "mcpServers": {
+    "my-notes-app": {
+      "command": "npx",
+      "args": ["@nimblebraininc/mpak", "run", "@yourorg/my-notes-app"]
+    }
+  }
+}
+```
+
+**Local development:** run a local bundle without publishing:
+
+```bash
+npx @nimblebraininc/mpak run --local ./my-notes-app.mcpb
+```
+
+The agent will see tools like `create_note`, `list_notes`, and `search_notes`, along with resources like `upjack://context` (your domain knowledge) and `upjack://skills/*` (your skill documents).
+
+## Next Steps
+
+- [Build a Todo App](/tutorials/todo-app/): Hands-on tutorial building a complete application step by step
+- [Architecture](/concepts/architecture/): How Upjack works under the hood
+- [Three Tiers](/concepts/three-tiers/): The three levels of customization
+- [Manifest Reference](/reference/manifest/): Full specification of the manifest format
+- [Python Library](/libraries/python/): Full Python API reference
+- [TypeScript Library](/libraries/typescript/): Full TypeScript API reference

@@ -1,0 +1,15 @@
+id: smoke-bug-tracker
+description: "Bug tracking app with bugs, milestones, and components"
+tags: [smoke]
+prompt: "Create a bug tracking app"
+expect:
+  entities:
+    - name: bug
+  entity_count: [2, 6]
+  skill_count: [1, 5]
+assertions:
+  - app_loads
+  - server_creates
+  - seed_loads
+budget_usd: 2.00
+timeout_sec: 300

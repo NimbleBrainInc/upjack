@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Todo Project",
+  "description": "A project that groups related tasks",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "Project name"
+    },
+    "description": {
+      "type": "string",
+      "description": "What this project is about and its goals"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "Hex color code for visual identification"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Target completion date for the project"
+    }
+  },
+  "required": ["name"]
+}

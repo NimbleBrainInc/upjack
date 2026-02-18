@@ -1,0 +1,151 @@
+---
+title: Three Tiers
+description: "Upjack's three complexity tiers: schemas + skills, MCP server, and custom server."
+draft: false
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Upjack apps exist on a spectrum of complexity. Most apps never leave Tier 1.
+
+:::tip[Want the fastest path?]
+Install the [app-builder skill](/quick-start/#the-fast-way-let-your-agent-build-it), describe what you want, and your agent generates a complete app (schemas, skills, manifest, server entry point). The result is a standard Tier 1 or Tier 2 app that you can customize from there.
+:::
+
+## Overview
+
+| Tier | Components | Code Required | Use Case |
+|------|-----------|---------------|----------|
+| **1. Schemas + Skills** | Entity schemas (JSON Schema) + Skills (Markdown) | None | CRM, tracker, knowledge base |
+| **2. MCP Server** | Tier 1 + `create_server()` / `createServer()` | Entry point only | Any app with structured data |
+| **3. Custom Server** | Tier 2 + custom logic | Python or TypeScript (`upjack` library) | Complex business logic, integrations |
+
+## Tier 1: Schemas + Skills
+
+The simplest hand-built tier. Define JSON Schemas for your entities and write Markdown skills for domain expertise. Use `UpjackApp` directly for entity management without an MCP server.
+
+**You write:**
+- JSON Schema files defining your entity types
+- Markdown skill files encoding domain expertise
+- A manifest wiring them together
+
+**You get:**
+- Typed entity CRUD with validation
+- Full-text search across all string fields
+- Type-prefixed IDs for every record
+- JSON file storage in a git-friendly structure
+
+**Example:** A personal note-taking app. Define a `note` schema with `title`, `body`, and `tags`. Write a skill describing how to categorize notes. The agent can create, search, and organize notes, no code required.
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack import UpjackApp
+
+    app = UpjackApp.from_manifest("manifest.json")
+    note = app.create_entity("note", {"title": "Meeting notes", "body": "..."})
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { UpjackApp } from "upjack";
+
+    const app = UpjackApp.fromManifest("manifest.json");
+    const note = app.createEntity("note", { title: "Meeting notes", body: "..." });
+    ```
+  </TabItem>
+</Tabs>
+
+## Tier 2: MCP Server
+
+Add `create_server()` / `createServer()` to expose your entities as MCP tools. Any MCP-compatible client (Claude, Cursor, custom agents) can now interact with your data.
+
+**You write:**
+- Everything from Tier 1
+- A 3-line server entry point
+
+**You get:**
+- 6 MCP tools per entity type (`create_`, `get_`, `update_`, `list_`, `search_`, `delete_`)
+- Context and skill resources served to the agent
+- Schema validation on every operation
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack.server import create_server
+
+    mcp = create_server("manifest.json")
+    mcp.run()
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { startServer } from "upjack/server";
+
+    startServer("manifest.json");
+    ```
+  </TabItem>
+</Tabs>
+
+## Tier 3: Custom Server
+
+For apps that need business logic beyond CRUD (computed fields, external API calls, complex validation, multi-step transactions). Import `UpjackApp` for entity management and register additional tools alongside the generated ones.
+
+**You write:**
+- Everything from Tier 1
+- A custom MCP server with additional tools
+
+**You get:**
+- All Tier 2 capabilities
+- Custom tools alongside generated entity tools
+- Full control over business logic
+
+<Tabs>
+  <TabItem label="Python">
+    ```python
+    from upjack import UpjackApp
+    from upjack.server import create_server
+
+    mcp = create_server("manifest.json")
+
+    @mcp.tool()
+    def calculate_pipeline_value() -> float:
+        """Sum the value of all active deals."""
+        app = UpjackApp.from_manifest("manifest.json")
+        deals = app.search_entities("deal", filter={"stage": {"$ne": "lost"}})
+        return sum(d.get("value", 0) for d in deals)
+
+    mcp.run()
+    ```
+
+    Python uses [FastMCP](https://github.com/jlowin/fastmcp). Install with `uv add "upjack[mcp]"`.
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { UpjackApp } from "upjack";
+    import { createServer } from "upjack/server";
+    import { z } from "zod";
+
+    const server = createServer("manifest.json");
+    const app = UpjackApp.fromManifest("manifest.json");
+
+    server.tool("calculate_pipeline_value", {}, async () => {
+      const deals = app.searchEntities("deal", { filter: { stage: { $ne: "lost" } } });
+      const total = deals.reduce((sum, d) => sum + ((d.value as number) ?? 0), 0);
+      return { content: [{ type: "text", text: String(total) }] };
+    });
+    ```
+
+    TypeScript uses the [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk). Install with `npm install @modelcontextprotocol/sdk`.
+  </TabItem>
+</Tabs>
+
+## Choosing a Tier
+
+Start at Tier 1. Move up only when you need to:
+
+- **Tier 1** if your app is primarily about structured data + domain expertise
+- **Tier 2** if you want agents to interact with your data via MCP
+- **Tier 3** if you need computed fields, external integrations, or custom validation
+
+Most apps stay at Tier 1 or Tier 2. The framework handles the mechanical parts (storage, validation, search, tool generation) so you can focus on what matters: your domain schemas and expertise.

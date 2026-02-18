@@ -1,0 +1,23 @@
+# upjack.dev robots.txt
+User-agent: *
+Allow: /
+Disallow: /pagefind/
+
+# Sitemap
+Sitemap: https://upjack.dev/sitemap-index.xml
+
+# AI Crawlers — explicitly allowed
+User-agent: GPTBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /

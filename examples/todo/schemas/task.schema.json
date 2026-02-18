@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Todo Task",
+  "description": "A task or todo item to be completed",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Short summary of what needs to be done"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description or notes about the task"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "none"],
+      "default": "none",
+      "description": "Task priority level"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date by which the task should be completed"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the task was marked complete"
+    },
+    "effort": {
+      "type": "string",
+      "enum": ["trivial", "small", "medium", "large", "epic"],
+      "description": "Estimated effort to complete the task"
+    },
+    "project_name": {
+      "type": "string",
+      "description": "Project name (denormalized for quick access)"
+    }
+  },
+  "required": ["title"]
+}

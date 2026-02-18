@@ -1,0 +1,15 @@
+id: smoke-recipe
+description: "Recipe management app with recipes, ingredients, and collections"
+tags: [smoke]
+prompt: "Build me a recipe management app"
+expect:
+  entities:
+    - name: recipe
+  entity_count: [2, 6]
+  skill_count: [1, 5]
+assertions:
+  - app_loads
+  - server_creates
+  - seed_loads
+budget_usd: 2.00
+timeout_sec: 300

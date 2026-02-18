@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CRM Activity",
+  "description": "A logged interaction or event related to contacts and deals",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "activity_type": {
+      "type": "string",
+      "description": "Type of activity",
+      "enum": ["email", "call", "meeting", "note", "task"]
+    },
+    "subject": {
+      "type": "string",
+      "description": "Activity subject or title"
+    },
+    "body": {
+      "type": "string",
+      "description": "Activity content or notes"
+    },
+    "occurred_at": {
+      "type": "string",
+      "description": "When the activity happened",
+      "format": "date-time"
+    },
+    "duration_minutes": {
+      "type": "integer",
+      "description": "Duration in minutes (for calls and meetings)",
+      "minimum": 0
+    },
+    "outcome": {
+      "type": "string",
+      "description": "Result of the activity"
+    }
+  },
+  "required": ["activity_type", "subject"]
+}

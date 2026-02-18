@@ -1,0 +1,17 @@
+id: smoke-todo
+description: "Basic todo app with tasks, projects, and labels"
+tags: [smoke]
+prompt: "Create me a todo app"
+expect:
+  entities:
+    - name: task
+    - name: project
+    - name: label
+  entity_count: [2, 6]
+  skill_count: [1, 5]
+assertions:
+  - app_loads
+  - server_creates
+  - seed_loads
+budget_usd: 2.00
+timeout_sec: 300

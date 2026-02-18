@@ -1,0 +1,41 @@
+{
+  "type": "pipeline",
+  "version": 1,
+  "name": "Default Pipeline",
+  "stages": [
+    {
+      "name": "Prospecting",
+      "order": 1,
+      "probability": 10,
+      "max_days": 14
+    },
+    {
+      "name": "Qualification",
+      "order": 2,
+      "probability": 25,
+      "max_days": 21
+    },
+    {
+      "name": "Proposal",
+      "order": 3,
+      "probability": 50,
+      "max_days": 14
+    },
+    {
+      "name": "Negotiation",
+      "order": 4,
+      "probability": 75,
+      "max_days": 30
+    },
+    {
+      "name": "Closed Won",
+      "order": 5,
+      "probability": 100
+    },
+    {
+      "name": "Closed Lost",
+      "order": 6,
+      "probability": 0
+    }
+  ]
+}

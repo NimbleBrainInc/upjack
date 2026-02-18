@@ -1,0 +1,45 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for upjack? We'd love to hear it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or pain point.
+      placeholder: I'm trying to build an app that... but I can't...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like?
+      description: Describe the feature or API you'd like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or alternative approaches you've tried?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Library (upjack)
+        - CLI (upjack init / serve)
+        - MCP server (create_server)
+        - Schema validation
+        - Search / filtering
+        - Documentation
+        - Examples
+        - Other
