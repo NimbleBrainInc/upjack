@@ -37,12 +37,11 @@ jobs:
           gh release create "$TAG" \
             --title "Skill $TAG" \
             --generate-notes \
-            skills/upjack-app-builder/*.skill || true
+            skills/upjack-app-builder-*.skill
 
       - name: Announce to mpak registry
         uses: NimbleBrainInc/skill-pack@v1
         with:
           directory: skills
-          build: false
           upload: false
           announce: true
