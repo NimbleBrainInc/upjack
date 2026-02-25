@@ -26,7 +26,8 @@ jobs:
       - name: Pack skill
         uses: NimbleBrainInc/skill-pack@v1
         with:
-          skill-dir: skills/upjack-app-builder
+          directory: skills/upjack-app-builder
+          pattern: SKILL.md
 
       - name: Create GitHub release
         env:
@@ -41,5 +42,6 @@ jobs:
       - name: Announce to mpak registry
         uses: NimbleBrainInc/skill-pack@v1
         with:
-          skill-dir: skills/upjack-app-builder
+          directory: skills/upjack-app-builder
+          pattern: SKILL.md
           announce: true
