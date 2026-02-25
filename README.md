@@ -14,44 +14,20 @@
 
 Write a JSON Schema for your data. Write Markdown for your domain expertise. Get entity management, validation, search, and a complete [MCP](https://modelcontextprotocol.io) server, automatically.
 
-```bash
-pip install upjack    # Python — or: uv add upjack
-npm install upjack    # TypeScript
-```
-
-```python
-from upjack import UpjackApp
-app = UpjackApp.from_manifest("manifest.json")
-
-# Your agent gets typed CRUD + search for every entity you define
-contact = app.create_entity("contact", {"name": "Alice", "email": "alice@example.com"})
-results = app.search_entities("contact", query="alice")
-```
-
-```python
-# One function call → full MCP server
-from upjack.server import create_server
-mcp = create_server("manifest.json")
-mcp.run()
-# Tools: create_contact, get_contact, update_contact, list_contacts, search_contacts, delete_contact
-```
-
-Same API in TypeScript — `UpjackApp.fromManifest()`, `createEntity()`, `startServer()`. See [TypeScript Quick Start](#7-typescript-quick-start) below.
-
 **No API code. No database. No deployment config.**
 
 ## What You Get
 
-Define a `contact` entity schema and a `lead-qualification` skill in Markdown. Upjack gives you:
+Define an entity schema and a skill in Markdown. Upjack gives you:
 
-- **6 MCP tools per entity**: `create_contact`, `get_contact`, `update_contact`, `list_contacts`, `search_contacts`, `delete_contact`
+- **6 MCP tools per entity**: `create_<entity>`, `get_<entity>`, `update_<entity>`, `list_<entities>`, `search_<entities>`, `delete_<entity>`
 - **Schema validation** on every write. Invalid data never hits storage.
-- **Type-prefixed IDs** like `ct_01HZ3QKB...` so you know it's a contact at a glance
+- **Type-prefixed IDs** like `tk_01HZ3QKB...` so you know the type at a glance
 - **Full-text search** across all string fields
 - **JSON file storage** in a git-friendly directory structure
 - **Skills as resources**: your Markdown expertise files are served to the agent via `upjack://skills/*`
 
-Your AI agent immediately knows how to create contacts, qualify leads, and follow up, all from two files.
+Define a task tracker, a CRM, a research notebook, an inventory system — any domain. Your AI agent gets full CRUD, search, and domain expertise from just two files.
 
 ## Prerequisites
 
@@ -70,55 +46,96 @@ You don't need deep knowledge of these to get started, but they're helpful conte
 
 ## Quick Start
 
-### 1. Install
+Two ways to get started. The fast way lets your AI agent build the app for you. The manual way gives you full control.
 
-> **Python 3.13+ required.** Upjack uses modern Python features. Check your version: `python --version`
+### The Fast Way: Let Your Agent Build It
 
-**Python:**
+Install the [Upjack App Builder](https://mpak.dev/skills/@nimblebraininc/upjack-app-builder) skill, describe what you want, and your agent generates a complete app.
+
+**Prerequisites:** [Node.js](https://nodejs.org/) v18+
+
+**1. Install the skill**
 
 ```bash
-pip install upjack    # or: uv add upjack
+npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder
 ```
 
-For MCP server support:
+**2. Tell your agent what you want**
 
-```bash
-pip install "upjack[mcp]"    # or: uv add "upjack[mcp]"
+```
+claude > Build me a CRM app
 ```
 
-**TypeScript** (requires Node.js >= 18):
+The agent generates a complete, ready-to-run app:
+
+```
+my-crm/
+  manifest.json               # Wiring: entities, skills, hooks, schedules
+  schemas/
+    contact.schema.json        # Entity definitions (JSON Schema)
+    company.schema.json
+    deal.schema.json
+  skills/
+    lead-qualification/
+      SKILL.md                 # Domain expertise the agent reads
+  context.md                   # Background knowledge
+  seed/
+    sample-contacts.json       # Initial data
+  server.py                    # MCP server entry point
+```
+
+**3. Run it**
 
 ```bash
+cd my-crm
+uv sync && python server.py        # Python
+# or: npm install && npx tsx server.ts   # TypeScript
+```
+
+Done. Your agent now has tools like `create_contact`, `list_contacts`, and `search_contacts`, plus resources for your domain knowledge and skills.
+
+---
+
+### The Manual Way: Build It Yourself
+
+If you prefer to understand every file and wire things up by hand.
+
+#### 1. Install
+
+> **Python 3.13+ required.** Check your version: `python --version`
+
+```bash
+# Python
+pip install upjack              # or: uv add upjack
+pip install "upjack[mcp]"       # with MCP server support
+
+# TypeScript (Node.js >= 18)
 npm install upjack
 ```
 
-> TypeScript examples use `npx tsx` to run `.ts` files directly. Running with `node` requires Node 22+.
-
-### 2. Try an example
-
-Clone the repo and run the Todo example:
+#### 2. Try an example
 
 ```bash
 git clone https://github.com/NimbleBrainInc/upjack.git
 cd upjack
-pip install "upjack[mcp]"    # if not already installed
+pip install "upjack[mcp]"
 python examples/todo/server.py    # or: npx tsx examples/todo/server.ts
 ```
 
-> The server communicates over stdio, so there's no visible output. It's ready when the terminal is waiting for input. Press Ctrl+C to stop.
+> The server communicates over stdio — no visible output. It's ready when the terminal is waiting for input. Ctrl+C to stop.
 
-Then connect it to **Claude Code**, **Claude Desktop**, **Cursor**, or **Codex**. See the [Todo README](examples/todo/README.md#3-connect-to-your-editor) for copy-paste configs.
+Connect it to **Claude Code**, **Claude Desktop**, **Cursor**, or **Codex**. See the [Todo README](examples/todo/README.md#3-connect-to-your-editor) for copy-paste configs.
 
 All three examples ([Todo](examples/todo/), [CRM](examples/crm/), [Research Assistant](examples/research-assistant/)) work the same way.
 
-### 3. Scaffold your own app
+#### 3. Scaffold your own app
 
 ```bash
 upjack init
 # prompts: App name? → my-crm | First entity? → contact
 ```
 
-This creates a ready-to-run app directory:
+Creates a ready-to-run app directory:
 
 ```
 my-crm/
@@ -132,11 +149,9 @@ my-crm/
   server.ts                    # 3-line MCP server entry point (TypeScript)
 ```
 
-Or scaffold manually. Create `manifest.json`:
+#### 4. Create a manifest
 
-### 4. Create a manifest
-
-`manifest.json` follows the [MCPB](https://github.com/modelcontextprotocol/mcpb) package format. The upjack-specific configuration lives inside `_meta["ai.nimblebrain/upjack"]`, which MCPB treats as opaque vendor metadata:
+`manifest.json` follows the [MCPB](https://github.com/modelcontextprotocol/mcpb) package format. Upjack-specific config lives in `_meta["ai.nimblebrain/upjack"]`:
 
 ```json
 {
@@ -162,9 +177,9 @@ Or scaffold manually. Create `manifest.json`:
 }
 ```
 
-The `namespace` (`apps/notes`) determines where entity files are stored. The `prefix` (`nt`) is prepended to generated IDs, so you can identify entity types at a glance (e.g., `nt_01HZ3QKB...` is a note).
+The `namespace` determines where entity files are stored. The `prefix` is prepended to generated IDs (`nt_01HZ3QKB...`).
 
-### 5. Create an entity schema
+#### 5. Create an entity schema
 
 Create `schemas/note.schema.json`:
 
@@ -181,52 +196,66 @@ Create `schemas/note.schema.json`:
 }
 ```
 
-### 6. Python Quick Start
+#### 6. Use it (Python)
 
 ```python
 from upjack import UpjackApp
 
 app = UpjackApp.from_manifest("manifest.json")
 
-# Create an entity
 note = app.create_entity("note", {"title": "Hello", "body": "My first note"})
 print(note["id"])    # nt_01HZ3QKB9YWVJ0RPFA7MT8C5X
-print(note["type"])  # note
 
-# List entities
 notes = app.list_entities("note")
-
-# Search
 results = app.search_entities("note", query="hello")
-
-# Update
 app.update_entity("note", note["id"], {"body": "Updated body"})
-
-# Delete (soft delete by default)
-app.delete_entity("note", note["id"])
+app.delete_entity("note", note["id"])    # soft delete
 ```
 
-**What happened:** The library created a JSON file at `./apps/notes/data/notes/nt_01HZ3QKB....json` (relative to your current working directory) containing your note with an auto-generated ID, timestamps, and the data you provided. Soft-deleting sets `status` to `"deleted"` but keeps the file; pass `hard=True` to remove it from disk.
-
-**What about validation errors?** If you try to create an entity that doesn't match the schema, upjack raises immediately. Invalid data never reaches storage:
+Invalid data never reaches storage:
 
 ```python
-# title is required by the schema — this raises
 app.create_entity("note", {"body": "No title"})
 # jsonschema.ValidationError: 'title' is a required property
 ```
 
-**Serve as an MCP server:**
+#### 7. Use it (TypeScript)
+
+```typescript
+import { UpjackApp } from "upjack";
+
+const app = UpjackApp.fromManifest("manifest.json");
+
+const note = app.createEntity("note", { title: "Hello", body: "My first note" });
+console.log(note.id);    // nt_01HZ3QKB9YWVJ0RPFA7MT8C5X
+
+const notes = app.listEntities("note");
+const results = app.searchEntities("note", { query: "hello" });
+app.updateEntity("note", note.id, { body: "Updated body" });
+app.deleteEntity("note", note.id);    // soft delete
+```
+
+#### 8. Serve as an MCP server
+
+**Python:**
 
 ```python
 from upjack.server import create_server
-
 mcp = create_server("manifest.json")
 mcp.run()
-# Exposes: create_note, get_note, update_note, list_notes, search_notes, delete_note
+# Tools: create_note, get_note, update_note, list_notes, search_notes, delete_note
 ```
 
-**Connect to your agent** — the server communicates over stdio. Point any MCP-compatible client at `server.py`:
+**TypeScript:**
+
+```typescript
+import { startServer } from "upjack/server";
+startServer("manifest.json");
+```
+
+#### 9. Connect to your agent
+
+The server communicates over stdio. Point any MCP-compatible client at your server:
 
 **Claude Code:**
 
@@ -234,7 +263,7 @@ mcp.run()
 claude mcp add my-notes-app -- python /path/to/my-notes-app/server.py
 ```
 
-**Claude Desktop:** add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
 ```json
 {
@@ -247,7 +276,7 @@ claude mcp add my-notes-app -- python /path/to/my-notes-app/server.py
 }
 ```
 
-**Cursor:** add to `.cursor/mcp.json` in your project:
+**Cursor** (`.cursor/mcp.json`):
 
 ```json
 {
@@ -266,95 +295,9 @@ claude mcp add my-notes-app -- python /path/to/my-notes-app/server.py
 codex --mcp-config '{"mcpServers":{"my-notes-app":{"command":"python","args":["/path/to/my-notes-app/server.py"]}}}'
 ```
 
-The agent will see tools like `create_note`, `list_notes`, `search_notes`, and resources like `upjack://context` (your domain knowledge) and `upjack://skills/*` (your skill documents).
+> For TypeScript, replace `python` / `server.py` with `npx tsx` / `server.ts`.
 
-> **Publishing**: Upjack apps are [MCPB](https://github.com/modelcontextprotocol/mcpb) bundles. Use [mpak](https://mpak.dev) to package and distribute them (`npx @nimblebraininc/mpak run @yourorg/my-notes-app`).
-
-### 7. TypeScript Quick Start
-
-```typescript
-import { UpjackApp } from "upjack";
-
-const app = UpjackApp.fromManifest("manifest.json");
-
-// Create an entity
-const note = app.createEntity("note", { title: "Hello", body: "My first note" });
-console.log(note.id);    // nt_01HZ3QKB9YWVJ0RPFA7MT8C5X
-console.log(note.type);  // note
-
-// List entities
-const notes = app.listEntities("note");
-
-// Search
-const results = app.searchEntities("note", { query: "hello" });
-
-// Update
-app.updateEntity("note", note.id, { body: "Updated body" });
-
-// Delete (soft delete by default)
-app.deleteEntity("note", note.id);
-```
-
-Storage and soft-delete behavior is identical to the Python library.
-
-**Validation errors?** Same as Python — invalid data never reaches storage:
-
-```typescript
-// title is required by the schema — this throws
-app.createEntity("note", { body: "No title" });
-// Error: Validation failed: must have required property 'title'
-```
-
-**Serve as an MCP server:**
-
-```typescript
-import { startServer } from "upjack/server";
-
-startServer("manifest.json");
-// Exposes: create_note, get_note, update_note, list_notes, search_notes, delete_note
-```
-
-**Connect to your agent** — the server communicates over stdio. Point any MCP-compatible client at `server.ts`:
-
-**Claude Code:**
-
-```bash
-claude mcp add my-notes-app -- npx tsx /path/to/my-notes-app/server.ts
-```
-
-**Claude Desktop:** add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
-
-```json
-{
-  "mcpServers": {
-    "my-notes-app": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/my-notes-app/server.ts"]
-    }
-  }
-}
-```
-
-**Cursor:** add to `.cursor/mcp.json` in your project:
-
-```json
-{
-  "mcpServers": {
-    "my-notes-app": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/my-notes-app/server.ts"]
-    }
-  }
-}
-```
-
-**Codex:**
-
-```bash
-codex --mcp-config '{"mcpServers":{"my-notes-app":{"command":"npx","args":["tsx","/path/to/my-notes-app/server.ts"]}}}'
-```
-
-The agent will see tools like `create_note`, `list_notes`, `search_notes`, and resources like `upjack://context` (your domain knowledge) and `upjack://skills/*` (your skill documents).
+The agent sees tools like `create_note`, `list_notes`, `search_notes`, and resources like `upjack://context` and `upjack://skills/*`.
 
 > **Publishing**: Upjack apps are [MCPB](https://github.com/modelcontextprotocol/mcpb) bundles. Use [mpak](https://mpak.dev) to package and distribute them (`npx @nimblebraininc/mpak run @yourorg/my-notes-app`).
 
