@@ -27,6 +27,7 @@ jobs:
         uses: NimbleBrainInc/skill-pack@v1
         with:
           directory: skills
+          announce: false
 
       - name: Create GitHub release
         env:
@@ -42,4 +43,6 @@ jobs:
         uses: NimbleBrainInc/skill-pack@v1
         with:
           directory: skills
+          build: false
+          upload: false
           announce: true
