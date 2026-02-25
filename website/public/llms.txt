@@ -2,7 +2,7 @@
 
 > Upjack is a declarative framework for building AI-powered applications.
 > The fastest way to start is with the app-builder skill: install it with
-> `npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder`, describe the app
+> `npx @nimblebrain/mpak skill install @nimblebraininc/upjack-app-builder`, describe the app
 > you want, and your agent generates everything. You can also build by hand
 > using JSON Schema and Markdown. Either way, Upjack provides entity
 > management, validation, search, and a complete MCP server — automatically.

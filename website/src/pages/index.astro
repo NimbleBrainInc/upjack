@@ -69,7 +69,7 @@ const beforeCode = `<span class="comment"># ── models.py ──────�
 <div class="fade"></div>`;
 
 const afterCode = `<span class="comment"># ── Install the skill ──────────────────</span>
-<span class="good">$</span> npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder
+<span class="good">$</span> npx @nimblebrain/mpak skill install @nimblebraininc/upjack-app-builder
 
 <span class="comment"># ── Tell your agent ───────────────────</span>
 <span class="good">claude &gt;</span> <span class="str">Build me a CRM app</span>
@@ -96,7 +96,7 @@ const afterCode = `<span class="comment"># ── Install the skill ────
 
 <span class="good">// Done. You're jacked.</span>`;
 
-const agentCliContent = `<span class="p">$</span> <span class="c">npm i -g @nimblebraininc/mpak</span>
+const agentCliContent = `<span class="p">$</span> <span class="c">npm i -g @nimblebrain/mpak</span>
 <span class="p">$</span> <span class="c">mpak skill install @nimblebraininc/upjack-app-builder</span>
 <span class="ap">&gt;</span> <span class="t">Build me a CRM</span>
 <span class="p">$</span> <span class="c">python server.py</span>
@@ -108,7 +108,7 @@ const cursorContent = `<span class="cm">// .cursor/mcp.json</span>
   <span class="key">"mcpServers"</span>: {
     <span class="key">"upjack"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
-      <span class="key">"args"</span>: [<span class="str">"@nimblebraininc/mpak"</span>, <span class="str">"run"</span>,
+      <span class="key">"args"</span>: [<span class="str">"@nimblebrain/mpak"</span>, <span class="str">"run"</span>,
              <span class="str">"@nimblebraininc/upjack-app-builder"</span>]
     }
   }
@@ -122,7 +122,7 @@ const windsurfContent = `<span class="cm">// windsurf mcp config</span>
   <span class="key">"mcpServers"</span>: {
     <span class="key">"upjack"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
-      <span class="key">"args"</span>: [<span class="str">"@nimblebraininc/mpak"</span>, <span class="str">"run"</span>,
+      <span class="key">"args"</span>: [<span class="str">"@nimblebrain/mpak"</span>, <span class="str">"run"</span>,
              <span class="str">"@nimblebraininc/upjack-app-builder"</span>]
     }
   }
@@ -1103,7 +1103,7 @@ const manualTsContent = `<span class="p">$</span> <span class="c">npm install up
           <div class="dose-content">
             <h3>INSTALL THE SKILL</h3>
             <p>One command. The app-builder skill knows how to generate complete Upjack apps from a description. Schemas, skills, manifest, server. Everything.</p>
-            <span class="dose-file">npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder</span>
+            <span class="dose-file">npx @nimblebrain/mpak skill install @nimblebraininc/upjack-app-builder</span>
           </div>
         </div>
 

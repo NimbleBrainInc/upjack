@@ -17,13 +17,13 @@ Install the skill, describe what you want, and let your agent generate a complet
 You need [Node.js](https://nodejs.org/) (v18+) and [mpak](https://mpak.dev) installed:
 
 ```bash
-npm install -g @nimblebraininc/mpak
+npm install -g @nimblebrain/mpak
 ```
 
 ### 1. Install the skill
 
 ```bash
-npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder
+npx @nimblebrain/mpak skill install @nimblebraininc/upjack-app-builder
 ```
 
 ### 2. Tell your agent what you want
@@ -253,7 +253,7 @@ Connect your published bundle (or a local `.mcpb` file) to your agent:
 **Claude Code**
 
 ```bash
-claude mcp add my-notes-app -- npx @nimblebraininc/mpak run @yourorg/my-notes-app
+claude mcp add my-notes-app -- npx @nimblebrain/mpak run @yourorg/my-notes-app
 ```
 
 **Claude Desktop / Cursor / Windsurf:** add to your MCP config file (`claude_desktop_config.json`, `.cursor/mcp.json`, etc.):
@@ -263,7 +263,7 @@ claude mcp add my-notes-app -- npx @nimblebraininc/mpak run @yourorg/my-notes-ap
   "mcpServers": {
     "my-notes-app": {
       "command": "npx",
-      "args": ["@nimblebraininc/mpak", "run", "@yourorg/my-notes-app"]
+      "args": ["@nimblebrain/mpak", "run", "@yourorg/my-notes-app"]
     }
   }
 }
@@ -272,7 +272,7 @@ claude mcp add my-notes-app -- npx @nimblebraininc/mpak run @yourorg/my-notes-ap
 **Local development:** run a local bundle without publishing:
 
 ```bash
-npx @nimblebraininc/mpak run --local ./my-notes-app.mcpb
+npx @nimblebrain/mpak run --local ./my-notes-app.mcpb
 ```
 
 The agent will see tools like `create_note`, `list_notes`, and `search_notes`, along with resources like `upjack://context` (your domain knowledge) and `upjack://skills/*` (your skill documents).

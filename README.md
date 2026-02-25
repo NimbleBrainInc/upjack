@@ -57,7 +57,7 @@ Install the [Upjack App Builder](https://mpak.dev/skills/@nimblebraininc/upjack-
 **1. Install the skill**
 
 ```bash
-npx @nimblebraininc/mpak skill install @nimblebraininc/upjack-app-builder
+npx @nimblebrain/mpak skill install @nimblebraininc/upjack-app-builder
 ```
 
 **2. Tell your agent what you want**
@@ -299,7 +299,7 @@ codex --mcp-config '{"mcpServers":{"my-notes-app":{"command":"python","args":["/
 
 The agent sees tools like `create_note`, `list_notes`, `search_notes`, and resources like `upjack://context` and `upjack://skills/*`.
 
-> **Publishing**: Upjack apps are [MCPB](https://github.com/modelcontextprotocol/mcpb) bundles. Use [mpak](https://mpak.dev) to package and distribute them (`npx @nimblebraininc/mpak run @yourorg/my-notes-app`).
+> **Publishing**: Upjack apps are [MCPB](https://github.com/modelcontextprotocol/mcpb) bundles. Use [mpak](https://mpak.dev) to package and distribute them (`npx @nimblebrain/mpak run @yourorg/my-notes-app`).
 
 ## How It Works
 
