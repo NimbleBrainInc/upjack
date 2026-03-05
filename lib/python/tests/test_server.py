@@ -10,7 +10,7 @@ import pytest
 
 from upjack.server import (
     _build_instructions,
-    _describe_schema_fields,
+    _prepare_entity_schema,
     create_server,
     main,
 )
@@ -41,6 +41,17 @@ async def _call_tool(mcp, name: str, arguments: dict | None = None) -> Any:
         if not result.content:
             return None
         return json.loads(result.content[0].text)
+
+
+async def _get_tool_input_schema(mcp, name: str) -> dict[str, Any]:
+    from fastmcp import Client
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        for t in tools:
+            if t.name == name:
+                return t.inputSchema
+        raise KeyError(f"Tool {name!r} not found")
 
 
 async def _list_resource_uris(mcp) -> set[str]:
@@ -123,19 +134,12 @@ def _make_manifest(
 # ===========================================================================
 
 
-class TestDescribeSchemaFields:
-    """Test _describe_schema_fields — generates human-readable field summaries."""
+class TestPrepareEntitySchema:
+    """Test _prepare_entity_schema — strips base fields and prepares for tool input."""
 
-    def test_none_returns_empty(self):
-        assert _describe_schema_fields(None) == ""
-
-    def test_no_properties_returns_empty(self):
-        assert _describe_schema_fields({}) == ""
-        assert _describe_schema_fields({"properties": {}}) == ""
-
-    def test_only_base_entity_fields_returns_empty(self):
-        """Base entity fields (id, type, version, etc.) should be skipped."""
+    def test_strips_base_entity_fields(self):
         schema = {
+            "type": "object",
             "properties": {
                 "id": {"type": "string"},
                 "type": {"type": "string"},
@@ -147,80 +151,121 @@ class TestDescribeSchemaFields:
                 "tags": {"type": "array"},
                 "source": {"type": "object"},
                 "relationships": {"type": "array"},
-            }
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
         }
-        assert _describe_schema_fields(schema) == ""
+        result = _prepare_entity_schema(schema)
+        assert "name" in result["properties"]
+        assert "id" not in result["properties"]
+        assert "type" not in result["properties"]
+        assert "status" not in result["properties"]
 
-    def test_separates_required_and_optional(self):
+    def test_strips_json_schema_meta_keywords(self):
         schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/schema",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+        }
+        result = _prepare_entity_schema(schema)
+        assert "$schema" not in result
+        assert "$id" not in result
+        assert result["type"] == "object"
+
+    def test_preserves_required_for_create(self):
+        schema = {
+            "type": "object",
             "properties": {
                 "name": {"type": "string"},
                 "score": {"type": "integer"},
             },
             "required": ["name"],
         }
-        result = _describe_schema_fields(schema)
-        assert "Required fields:" in result
-        assert "name (string)" in result
-        assert "Optional fields:" in result
-        assert "score (integer)" in result
+        result = _prepare_entity_schema(schema)
+        assert result["required"] == ["name"]
 
-    def test_includes_enum_values(self):
+    def test_strips_base_fields_from_required(self):
         schema = {
+            "type": "object",
             "properties": {
-                "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+                "id": {"type": "string"},
+                "name": {"type": "string"},
             },
+            "required": ["id", "name"],
         }
-        result = _describe_schema_fields(schema)
-        assert "one of:" in result
+        result = _prepare_entity_schema(schema)
+        assert result["required"] == ["name"]
 
-    def test_includes_min_max(self):
+    def test_removes_empty_required(self):
+        """If all required fields are base fields, remove the required key entirely."""
         schema = {
-            "properties": {
-                "score": {"type": "integer", "minimum": 0, "maximum": 100},
-            },
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
         }
-        result = _describe_schema_fields(schema)
-        assert "min: 0" in result
-        assert "max: 100" in result
+        result = _prepare_entity_schema(schema)
+        assert "required" not in result
 
-    def test_includes_format(self):
+    def test_strips_required_for_update(self):
         schema = {
-            "properties": {
-                "email": {"type": "string", "format": "email"},
-            },
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
         }
-        result = _describe_schema_fields(schema)
-        assert "format: email" in result
+        result = _prepare_entity_schema(schema, for_update=True)
+        assert "required" not in result
 
-    def test_includes_description(self):
+    def test_preserves_nested_structure(self):
+        """Nested objects and arrays should pass through unchanged."""
         schema = {
+            "type": "object",
             "properties": {
-                "notes": {"type": "string", "description": "Free-form text notes"},
-            },
-        }
-        result = _describe_schema_fields(schema)
-        assert "Free-form text notes" in result
-
-    def test_all_metadata_combined(self):
-        """A field with multiple attributes should include all of them."""
-        schema = {
-            "properties": {
-                "score": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 100,
-                    "description": "Lead qualification score",
+                "emotional_drivers": {
+                    "type": "object",
+                    "properties": {
+                        "fear": {
+                            "type": "object",
+                            "properties": {
+                                "theme": {"type": "string"},
+                                "trigger_statement": {"type": "string"},
+                            },
+                            "required": ["theme", "trigger_statement"],
+                        },
+                    },
+                },
+                "scoring_signals": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "signal": {"type": "string"},
+                            "points": {"type": "integer"},
+                        },
+                        "required": ["signal", "points"],
+                    },
                 },
             },
-            "required": ["score"],
         }
-        result = _describe_schema_fields(schema)
-        assert "score (integer)" in result
-        assert "min: 0" in result
-        assert "max: 100" in result
-        assert "Lead qualification score" in result
-        assert "Required fields:" in result
+        result = _prepare_entity_schema(schema)
+        # Nested structure preserved exactly
+        fear = result["properties"]["emotional_drivers"]["properties"]["fear"]
+        assert fear["required"] == ["theme", "trigger_statement"]
+        items = result["properties"]["scoring_signals"]["items"]
+        assert items["required"] == ["signal", "points"]
+
+    def test_does_not_mutate_original(self):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "name": {"type": "string"}},
+            "required": ["id", "name"],
+        }
+        _prepare_entity_schema(schema)
+        # Original untouched
+        assert "$schema" in schema
+        assert "id" in schema["properties"]
+        assert "id" in schema["required"]
 
 
 class TestBuildInstructions:
@@ -362,6 +407,126 @@ class TestCreateServer:
         assert mcp.name == "Fallback Title"
 
 
+class TestToolInputSchemas:
+    """Verify that create/update tools expose full entity JSON Schema."""
+
+    def test_create_tool_exposes_entity_schema(self, tmp_path):
+        """create_* tools should have the entity schema nested under data."""
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "type": {"type": "string"},
+                "name": {"type": "string", "description": "Campaign name"},
+                "score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "emotional_drivers": {
+                    "type": "object",
+                    "properties": {
+                        "fear": {"type": "object", "properties": {"theme": {"type": "string"}}},
+                    },
+                },
+            },
+            "required": ["name"],
+        }
+
+        # _make_manifest writes a default schema; overwrite it after
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "campaign",
+                    "plural": "campaigns",
+                    "prefix": "cp",
+                }
+            ],
+        )
+        (tmp_path / "schemas" / "campaign.schema.json").write_text(json.dumps(entity_schema))
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+        input_schema = _run(_get_tool_input_schema(mcp, "create_campaign"))
+
+        # data property should contain the entity schema (minus base fields)
+        data_schema = input_schema["properties"]["data"]
+        assert "name" in data_schema["properties"]
+        assert data_schema["properties"]["name"]["description"] == "Campaign name"
+        assert "score" in data_schema["properties"]
+        assert data_schema["properties"]["score"]["minimum"] == 0
+        # Nested structure preserved
+        assert "emotional_drivers" in data_schema["properties"]
+        fear = data_schema["properties"]["emotional_drivers"]["properties"]["fear"]
+        assert "theme" in fear["properties"]
+        # Base fields stripped
+        assert "id" not in data_schema["properties"]
+        assert "type" not in data_schema["properties"]
+        # $schema meta keyword stripped
+        assert "$schema" not in data_schema
+        # Required preserved (minus base fields)
+        assert data_schema["required"] == ["name"]
+
+    def test_update_tool_has_no_required_in_data(self, tmp_path):
+        """update_* tools should have all data fields optional (partial merge)."""
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "score": {"type": "integer"},
+            },
+            "required": ["name"],
+        }
+
+        # _make_manifest writes a default schema; overwrite it after
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "item",
+                    "plural": "items",
+                    "prefix": "it",
+                }
+            ],
+        )
+        (tmp_path / "schemas" / "item.schema.json").write_text(json.dumps(entity_schema))
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+        input_schema = _run(_get_tool_input_schema(mcp, "update_item"))
+
+        # Top-level requires entity_id and data
+        assert "entity_id" in input_schema["properties"]
+        assert set(input_schema["required"]) == {"entity_id", "data"}
+        # Data schema has no required (partial update)
+        data_schema = input_schema["properties"]["data"]
+        assert "required" not in data_schema
+        # But fields are still described
+        assert "name" in data_schema["properties"]
+        assert "score" in data_schema["properties"]
+
+    def test_create_tool_falls_back_to_opaque_without_schema(self, tmp_path):
+        """Without a schema, create_* should still work with opaque object."""
+        schemas_dir = tmp_path / "schemas"
+        schemas_dir.mkdir()
+        # Minimal schema with no app properties
+        (schemas_dir / "thing.schema.json").write_text(
+            json.dumps(
+                {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+            )
+        )
+
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "thing",
+                    "plural": "things",
+                    "prefix": "th",
+                    "schema": "schemas/thing.schema.json",
+                }
+            ],
+        )
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+        input_schema = _run(_get_tool_input_schema(mcp, "create_thing"))
+        assert input_schema["properties"]["data"]["type"] == "object"
+
+
 class TestServerToolsWork:
     """Verify that generated tools actually perform CRUD correctly."""
 
@@ -433,6 +598,60 @@ class TestServerToolsWork:
         # Hard-deleted entities are gone from disk entirely
         result = _run(_call_tool(mcp, "list_items", {}))
         assert result is None or all(r["id"] != created["id"] for r in result)
+
+
+# ===========================================================================
+# JSON string deserialization (stdio transport edge case)
+# ===========================================================================
+
+
+class TestJsonStringDeserialization:
+    """Raw Tool subclasses bypass FastMCP's Pydantic deserialization.
+
+    Over stdio transport, object arguments may arrive as JSON strings instead
+    of parsed dicts.  The server must handle both forms.
+    """
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "item", "plural": "items", "prefix": "it"}],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(manifest_path, root=workspace)
+
+    def test_create_with_data_as_json_string(self, mcp):
+        """create_* should work when data arrives as a JSON string."""
+        data_str = json.dumps({"name": "StringWidget"})
+        created = _run(_call_tool(mcp, "create_item", {"data": data_str}))
+        assert created["name"] == "StringWidget"
+        assert created["id"].startswith("it_")
+
+    def test_update_with_data_as_json_string(self, mcp):
+        """update_* should work when data arrives as a JSON string."""
+        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Original"}}))
+        data_str = json.dumps({"name": "Updated"})
+        updated = _run(
+            _call_tool(
+                mcp,
+                "update_item",
+                {"entity_id": created["id"], "data": data_str},
+            )
+        )
+        assert updated["name"] == "Updated"
+
+    def test_plain_string_args_not_mangled(self, mcp):
+        """Non-JSON string arguments (like entity_id) must not be altered."""
+        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Test"}}))
+        fetched = _run(_call_tool(mcp, "get_item", {"entity_id": created["id"]}))
+        assert fetched["id"] == created["id"]
+
+    def test_dict_args_still_work(self, mcp):
+        """Native dict arguments (normal in-process path) must keep working."""
+        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "DictWidget"}}))
+        assert created["name"] == "DictWidget"
 
 
 # ===========================================================================

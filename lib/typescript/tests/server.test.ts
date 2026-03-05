@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { _buildInstructions, _describeSchemaFields, createServer } from "../src/server.js";
+import { _buildInstructions, _prepareEntitySchema, createServer } from "../src/server.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -73,18 +73,10 @@ async function connectClient(manifestPath: string, workspace: string): Promise<C
 // Unit tests for pure functions
 // ---------------------------------------------------------------------------
 
-describe("describeSchemaFields", () => {
-  it("returns empty for null", () => {
-    expect(_describeSchemaFields(undefined)).toBe("");
-  });
-
-  it("returns empty for no properties", () => {
-    expect(_describeSchemaFields({})).toBe("");
-    expect(_describeSchemaFields({ properties: {} })).toBe("");
-  });
-
-  it("skips base entity fields", () => {
+describe("prepareEntitySchema", () => {
+  it("strips base entity fields", () => {
     const schema = {
+      type: "object",
       properties: {
         id: { type: "string" },
         type: { type: "string" },
@@ -96,37 +88,117 @@ describe("describeSchemaFields", () => {
         tags: { type: "array" },
         source: { type: "object" },
         relationships: { type: "array" },
+        name: { type: "string" },
       },
+      required: ["name"],
     };
-    expect(_describeSchemaFields(schema)).toBe("");
+    const result = _prepareEntitySchema(schema);
+    expect(result.properties).toHaveProperty("name");
+    expect(result.properties).not.toHaveProperty("id");
+    expect(result.properties).not.toHaveProperty("type");
+    expect(result.properties).not.toHaveProperty("status");
   });
 
-  it("separates required and optional", () => {
+  it("strips JSON Schema meta keywords", () => {
     const schema = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      $id: "https://example.com/schema",
+      type: "object",
+      properties: { name: { type: "string" } },
+    };
+    const result = _prepareEntitySchema(schema);
+    expect(result).not.toHaveProperty("$schema");
+    expect(result).not.toHaveProperty("$id");
+    expect(result.type).toBe("object");
+  });
+
+  it("preserves required for create", () => {
+    const schema = {
+      type: "object",
       properties: { name: { type: "string" }, score: { type: "integer" } },
       required: ["name"],
     };
-    const result = _describeSchemaFields(schema);
-    expect(result).toContain("Required fields:");
-    expect(result).toContain("name (string)");
-    expect(result).toContain("Optional fields:");
-    expect(result).toContain("score (integer)");
+    const result = _prepareEntitySchema(schema);
+    expect(result.required).toEqual(["name"]);
   });
 
-  it("includes enum, min, max, format, description", () => {
+  it("strips base fields from required", () => {
     const schema = {
+      type: "object",
+      properties: { id: { type: "string" }, name: { type: "string" } },
+      required: ["id", "name"],
+    };
+    const result = _prepareEntitySchema(schema);
+    expect(result.required).toEqual(["name"]);
+  });
+
+  it("removes empty required array", () => {
+    const schema = {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    };
+    const result = _prepareEntitySchema(schema);
+    expect(result).not.toHaveProperty("required");
+  });
+
+  it("strips required for update", () => {
+    const schema = {
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+    };
+    const result = _prepareEntitySchema(schema, { forUpdate: true });
+    expect(result).not.toHaveProperty("required");
+  });
+
+  it("preserves nested structure", () => {
+    const schema = {
+      type: "object",
       properties: {
-        priority: { type: "string", enum: ["low", "high"] },
-        score: { type: "integer", minimum: 0, maximum: 100, description: "Lead score" },
-        email: { type: "string", format: "email" },
+        emotional_drivers: {
+          type: "object",
+          properties: {
+            fear: {
+              type: "object",
+              properties: {
+                theme: { type: "string" },
+                trigger: { type: "string" },
+              },
+              required: ["theme", "trigger"],
+            },
+          },
+        },
+        scoring_signals: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { signal: { type: "string" }, points: { type: "integer" } },
+            required: ["signal", "points"],
+          },
+        },
       },
     };
-    const result = _describeSchemaFields(schema);
-    expect(result).toContain("one of:");
-    expect(result).toContain("min: 0");
-    expect(result).toContain("max: 100");
-    expect(result).toContain("Lead score");
-    expect(result).toContain("format: email");
+    const result = _prepareEntitySchema(schema) as Record<string, unknown>;
+    const props = result.properties as Record<string, Record<string, unknown>>;
+    const fear = (props.emotional_drivers.properties as Record<string, Record<string, unknown>>)
+      .fear;
+    expect(fear.required).toEqual(["theme", "trigger"]);
+    const items = props.scoring_signals.items as Record<string, unknown>;
+    expect(items.required).toEqual(["signal", "points"]);
+  });
+
+  it("does not mutate original", () => {
+    const schema = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { id: { type: "string" }, name: { type: "string" } },
+      required: ["id", "name"],
+    };
+    _prepareEntitySchema(schema);
+    expect(schema).toHaveProperty("$schema");
+    expect(schema.properties).toHaveProperty("id");
+    expect(schema.required).toContain("id");
   });
 });
 
@@ -221,6 +293,94 @@ describe("createServer", () => {
   });
 });
 
+describe("tool input schemas", () => {
+  it("create tool exposes entity schema with full field structure", async () => {
+    const entitySchema = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        type: { type: "string" },
+        name: { type: "string", description: "Campaign name" },
+        score: { type: "integer", minimum: 0, maximum: 100 },
+        emotional_drivers: {
+          type: "object",
+          properties: {
+            fear: { type: "object", properties: { theme: { type: "string" } } },
+          },
+        },
+      },
+      required: ["name"],
+    };
+
+    // makeManifest writes a default schema; overwrite it after
+    const manifestPath = makeManifest(tmpDir, [
+      { name: "campaign", plural: "campaigns", prefix: "cp" },
+    ]);
+    writeFileSync(join(tmpDir, "schemas", "campaign.schema.json"), JSON.stringify(entitySchema));
+    const client = await connectClient(manifestPath, workspace);
+    const tools = await client.listTools();
+    const createTool = tools.tools.find((t) => t.name === "create_campaign");
+    expect(createTool).toBeDefined();
+    const dataSchema = (
+      createTool?.inputSchema.properties as Record<string, Record<string, unknown>>
+    ).data;
+
+    // App fields present with full metadata
+    expect(
+      (dataSchema.properties as Record<string, Record<string, unknown>>).name.description,
+    ).toBe("Campaign name");
+    expect((dataSchema.properties as Record<string, Record<string, unknown>>).score.minimum).toBe(
+      0,
+    );
+    // Nested structure preserved
+    const drivers = (dataSchema.properties as Record<string, Record<string, unknown>>)
+      .emotional_drivers;
+    expect((drivers.properties as Record<string, Record<string, unknown>>).fear).toBeDefined();
+    // Base fields stripped
+    expect(dataSchema.properties).not.toHaveProperty("id");
+    expect(dataSchema.properties).not.toHaveProperty("type");
+    // $schema stripped
+    expect(dataSchema).not.toHaveProperty("$schema");
+    // Required preserved (minus base fields)
+    expect(dataSchema.required).toEqual(["name"]);
+
+    await client.close();
+  });
+
+  it("update tool has no required in data (partial merge)", async () => {
+    const entitySchema = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        score: { type: "integer" },
+      },
+      required: ["name"],
+    };
+
+    const manifestPath = makeManifest(tmpDir, [{ name: "item", plural: "items", prefix: "it" }]);
+    writeFileSync(join(tmpDir, "schemas", "item.schema.json"), JSON.stringify(entitySchema));
+    const client = await connectClient(manifestPath, workspace);
+    const tools = await client.listTools();
+    const updateTool = tools.tools.find((t) => t.name === "update_item");
+    expect(updateTool).toBeDefined();
+    const inputSchema = updateTool?.inputSchema;
+
+    // Top-level requires entity_id and data
+    expect(inputSchema.properties).toHaveProperty("entity_id");
+    expect(new Set(inputSchema.required as string[])).toEqual(new Set(["entity_id", "data"]));
+    // Data schema has no required (partial update)
+    const dataSchema = (inputSchema.properties as Record<string, Record<string, unknown>>).data;
+    expect(dataSchema).not.toHaveProperty("required");
+    // But fields are still described
+    expect(dataSchema.properties).toHaveProperty("name");
+    expect(dataSchema.properties).toHaveProperty("score");
+
+    await client.close();
+  });
+});
+
 describe("tool CRUD", () => {
   let client: Client;
 
@@ -305,6 +465,86 @@ describe("tool CRUD", () => {
     const listResult = await client.callTool({ name: "list_items", arguments: {} });
     const items = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
     expect(items).toHaveLength(0);
+  });
+});
+
+describe("JSON string deserialization", () => {
+  // Raw Server bypasses SDK's Zod deserialization — object arguments may
+  // arrive as JSON strings over stdio transport.  The server must handle both.
+
+  let client: Client;
+
+  beforeEach(async () => {
+    const manifestPath = makeManifest(tmpDir, [{ name: "item", plural: "items", prefix: "it" }]);
+    client = await connectClient(manifestPath, workspace);
+  });
+
+  afterEach(async () => {
+    await client.close();
+  });
+
+  it("create works when data is a JSON string", async () => {
+    const result = await client.callTool({
+      name: "create_item",
+      arguments: { data: JSON.stringify({ name: "StringWidget" }) },
+    });
+    const created = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(created.name).toBe("StringWidget");
+    expect(created.id.startsWith("it_")).toBe(true);
+  });
+
+  it("update works when data is a JSON string", async () => {
+    const createResult = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Original" } },
+    });
+    const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
+
+    const updateResult = await client.callTool({
+      name: "update_item",
+      arguments: { entity_id: created.id, data: JSON.stringify({ name: "Updated" }) },
+    });
+    const updated = JSON.parse((updateResult.content as Array<{ text: string }>)[0].text);
+    expect(updated.name).toBe("Updated");
+  });
+
+  it("search works when filter is a JSON string", async () => {
+    await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Findme" } },
+    });
+
+    const searchResult = await client.callTool({
+      name: "search_items",
+      arguments: { filter: JSON.stringify({ name: "Findme" }) },
+    });
+    const results = JSON.parse((searchResult.content as Array<{ text: string }>)[0].text);
+    expect(results).toHaveLength(1);
+    expect(results[0].name).toBe("Findme");
+  });
+
+  it("plain string args are not mangled", async () => {
+    const createResult = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Test" } },
+    });
+    const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
+
+    const getResult = await client.callTool({
+      name: "get_item",
+      arguments: { entity_id: created.id },
+    });
+    const fetched = JSON.parse((getResult.content as Array<{ text: string }>)[0].text);
+    expect(fetched.id).toBe(created.id);
+  });
+
+  it("dict args still work (normal in-process path)", async () => {
+    const result = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "DictWidget" } },
+    });
+    const created = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(created.name).toBe("DictWidget");
   });
 });
 
