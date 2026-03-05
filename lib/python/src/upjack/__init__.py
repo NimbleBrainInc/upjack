@@ -1,6 +1,6 @@
 """NimbleBrain Upjack — schema-driven entity management for AI-native applications."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from upjack.app import UpjackApp
 from upjack.entity import (
