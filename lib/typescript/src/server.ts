@@ -1,58 +1,258 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { UpjackApp } from "./app.js";
 import type { UpjackManifestExtension } from "./app.js";
 
-function describeSchemaFields(schema: Record<string, unknown> | undefined): string {
-  if (!schema) return "";
+// Base entity fields auto-managed by the framework — stripped from tool input schemas
+const BASE_ENTITY_KEYS = new Set([
+  "id",
+  "type",
+  "version",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "status",
+  "tags",
+  "source",
+  "relationships",
+]);
 
-  const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
-  const required = new Set((schema.required ?? []) as string[]);
+// ---------------------------------------------------------------------------
+// Schema preparation
+// ---------------------------------------------------------------------------
 
-  const baseKeys = new Set([
-    "id",
-    "type",
-    "version",
-    "created_at",
-    "updated_at",
-    "created_by",
-    "status",
-    "tags",
-    "source",
-    "relationships",
-  ]);
+interface JsonSchema {
+  type?: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
+  $schema?: string;
+  $id?: string;
+  [key: string]: unknown;
+}
 
-  const reqFields: string[] = [];
-  const optFields: string[] = [];
+function prepareEntitySchema(schema: JsonSchema, opts?: { forUpdate?: boolean }): JsonSchema {
+  // Strip JSON Schema meta keywords not applicable inside tool input
+  const { $schema: _, $id: __, ...result } = structuredClone(schema);
 
-  for (const [name, prop] of Object.entries(props)) {
-    if (baseKeys.has(name)) continue;
+  if (result.properties) {
+    result.properties = Object.fromEntries(
+      Object.entries(result.properties).filter(([k]) => !BASE_ENTITY_KEYS.has(k)),
+    );
+  }
 
-    const ptype = (prop.type as string) ?? "any";
-    const parts = [`${name} (${ptype})`];
+  if (opts?.forUpdate) {
+    // Updates are partial merges — all fields optional
+    const { required: _req, ...rest } = result;
+    return rest;
+  }
 
-    if (prop.enum) parts.push(`one of: ${JSON.stringify(prop.enum)}`);
-    if (prop.minimum !== undefined) parts.push(`min: ${prop.minimum}`);
-    if (prop.maximum !== undefined) parts.push(`max: ${prop.maximum}`);
-    if (prop.format) parts.push(`format: ${prop.format}`);
-    if (prop.description) parts.push(prop.description as string);
+  if (result.required) {
+    const filtered = result.required.filter((r) => !BASE_ENTITY_KEYS.has(r));
+    if (filtered.length === 0) {
+      const { required: _req, ...rest } = result;
+      return rest;
+    }
+    result.required = filtered;
+  }
 
-    const desc = parts.join(" — ");
-    if (required.has(name)) {
-      reqFields.push(desc);
-    } else {
-      optFields.push(desc);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Tool definition builders
+// ---------------------------------------------------------------------------
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+type ToolHandler = (args: Record<string, unknown>) => unknown;
+
+function buildEntityTools(
+  app: UpjackApp,
+  entityDef: { name: string; plural?: string; prefix: string; schema: string },
+  schema: Record<string, unknown> | undefined,
+): { definitions: ToolDefinition[]; handlers: Record<string, ToolHandler> } {
+  const name = entityDef.name;
+  const plural = entityDef.plural ?? `${name}s`;
+  const prefix = entityDef.prefix;
+  const idHint = `IDs start with ${prefix}_`;
+
+  const dataSchema = schema ? prepareEntitySchema(schema as JsonSchema) : { type: "object" };
+  const updateDataSchema = schema
+    ? prepareEntitySchema(schema as JsonSchema, { forUpdate: true })
+    : { type: "object" };
+
+  const definitions: ToolDefinition[] = [
+    {
+      name: `create_${name}`,
+      description: `Create a new ${name}. ${idHint}.`,
+      inputSchema: {
+        type: "object",
+        properties: { data: dataSchema },
+        required: ["data"],
+      },
+    },
+    {
+      name: `get_${name}`,
+      description: `Get a ${name} by ID. ${idHint}.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          entity_id: { type: "string", description: `${name} ID (${prefix}_...)` },
+        },
+        required: ["entity_id"],
+      },
+    },
+    {
+      name: `update_${name}`,
+      description: `Update a ${name} by ID. Merges fields by default. ${idHint}.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          entity_id: { type: "string", description: `${name} ID (${prefix}_...)` },
+          data: updateDataSchema,
+        },
+        required: ["entity_id", "data"],
+      },
+    },
+    {
+      name: `list_${plural}`,
+      description: `List ${plural}. Filters by status (default: active). Returns newest first. ${idHint}.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          status: { type: "string", default: "active", description: "Status filter" },
+          limit: { type: "number", default: 50, description: "Max results" },
+        },
+      },
+    },
+    {
+      name: `search_${plural}`,
+      description: `Search ${plural} with text query and/or structured filters. Text query matches across all string fields (case-insensitive). Filters support: direct equality, $gt, $gte, $lt, $lte, $ne, $in, $contains, $exists. Sort with '-field' for descending. ${idHint}.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Text search query" },
+          filter: { type: "object", description: "Structured filters" },
+          sort: { type: "string", default: "-updated_at", description: "Sort field" },
+          limit: { type: "number", default: 20, description: "Max results" },
+        },
+      },
+    },
+    {
+      name: `delete_${name}`,
+      description:
+        `Delete a ${name} by ID. Soft delete by default (sets status to 'deleted'). ` +
+        `Set hard=true to permanently remove. ${idHint}.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          entity_id: { type: "string", description: `${name} ID` },
+          hard: { type: "boolean", default: false, description: "Hard delete" },
+        },
+        required: ["entity_id"],
+      },
+    },
+  ];
+
+  const handlers: Record<string, ToolHandler> = {
+    [`create_${name}`]: (args) =>
+      app.createEntity(name, (args.data ?? {}) as Record<string, unknown>),
+    [`get_${name}`]: (args) => app.getEntity(name, args.entity_id as string),
+    [`update_${name}`]: (args) =>
+      app.updateEntity(
+        name,
+        args.entity_id as string,
+        (args.data ?? {}) as Record<string, unknown>,
+      ),
+    [`list_${plural}`]: (args) =>
+      app.listEntities(name, (args.status as string) ?? "active", (args.limit as number) ?? 50),
+    [`search_${plural}`]: (args) =>
+      app.searchEntities(name, {
+        query: args.query as string | undefined,
+        filter: args.filter as Record<string, unknown> | undefined,
+        sort: (args.sort as string) ?? "-updated_at",
+        limit: (args.limit as number) ?? 20,
+      }),
+    [`delete_${name}`]: (args) =>
+      app.deleteEntity(name, args.entity_id as string, (args.hard as boolean) ?? false),
+  };
+
+  return { definitions, handlers };
+}
+
+// ---------------------------------------------------------------------------
+// Resource builders
+// ---------------------------------------------------------------------------
+
+interface ResourceDefinition {
+  uri: string;
+  name: string;
+  description: string;
+}
+
+type ResourceReader = () => string;
+
+function buildResources(
+  manifestDir: string,
+  upjack: UpjackManifestExtension,
+): { definitions: ResourceDefinition[]; readers: Record<string, ResourceReader> } {
+  const definitions: ResourceDefinition[] = [];
+  const readers: Record<string, ResourceReader> = {};
+
+  // Context resource
+  const contextFile = upjack.context;
+  if (contextFile) {
+    const contextPath = join(manifestDir, contextFile);
+    try {
+      readFileSync(contextPath, "utf-8"); // Check it exists
+      definitions.push({
+        uri: "upjack://context",
+        name: "Context",
+        description: "App domain knowledge",
+      });
+      readers["upjack://context"] = () => readFileSync(contextPath, "utf-8");
+    } catch {
+      // Context file doesn't exist — skip
     }
   }
 
-  const lines: string[] = [];
-  if (reqFields.length) lines.push(`Required fields: ${reqFields.join("; ")}`);
-  if (optFields.length) lines.push(`Optional fields: ${optFields.join("; ")}`);
-  return lines.join(". ");
+  // Skill resources
+  for (const skill of upjack.skills ?? []) {
+    if (skill.source !== "bundled") continue;
+    const skillPath = join(manifestDir, skill.path);
+    try {
+      readFileSync(skillPath, "utf-8"); // Check it exists
+      const skillName = skillPath.split("/").slice(-2, -1)[0];
+      const uri = `upjack://skills/${skillName}`;
+      definitions.push({
+        uri,
+        name: skillName,
+        description: `Skill: ${skillName}`,
+      });
+      readers[uri] = () => readFileSync(skillPath, "utf-8");
+    } catch {
+      // Skill file doesn't exist — skip
+    }
+  }
+
+  return { definitions, readers };
 }
+
+// ---------------------------------------------------------------------------
+// Instructions
+// ---------------------------------------------------------------------------
 
 function buildInstructions(upjack: UpjackManifestExtension): string {
   const appName = upjack.display?.name ?? "App";
@@ -68,125 +268,21 @@ function buildInstructions(upjack: UpjackManifestExtension): string {
   return instructions;
 }
 
-function registerEntityTools(
-  server: McpServer,
-  app: UpjackApp,
-  entityDef: { name: string; plural?: string; prefix: string; schema: string },
-  schema: Record<string, unknown> | undefined,
-): void {
-  const name = entityDef.name;
-  const plural = entityDef.plural ?? `${name}s`;
-  const prefix = entityDef.prefix;
-
-  const fieldDesc = describeSchemaFields(schema);
-  const idHint = `IDs start with ${prefix}_`;
-
-  // create_{name}
-  const createDesc = `Create a new ${name}. ${idHint}.${fieldDesc ? ` ${fieldDesc}.` : ""}`;
-  server.tool(
-    `create_${name}`,
-    createDesc,
-    { data: z.record(z.string(), z.unknown()).describe(`Fields for the new ${name}`) },
-    ({ data }) => ({
-      content: [{ type: "text", text: JSON.stringify(app.createEntity(name, data)) }],
-    }),
-  );
-
-  // get_{name}
-  server.tool(
-    `get_${name}`,
-    `Get a ${name} by ID. ${idHint}.`,
-    { entity_id: z.string().describe(`${name} ID (${prefix}_...)`) },
-    ({ entity_id }) => ({
-      content: [{ type: "text", text: JSON.stringify(app.getEntity(name, entity_id)) }],
-    }),
-  );
-
-  // update_{name}
-  const updateDesc = `Update a ${name} by ID. Merges fields by default. ${idHint}.${fieldDesc ? ` ${fieldDesc}.` : ""}`;
-  server.tool(
-    `update_${name}`,
-    updateDesc,
-    {
-      entity_id: z.string().describe(`${name} ID`),
-      data: z.record(z.string(), z.unknown()).describe("Fields to update"),
-    },
-    ({ entity_id, data }) => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(app.updateEntity(name, entity_id, data)),
-        },
-      ],
-    }),
-  );
-
-  // list_{plural}
-  server.tool(
-    `list_${plural}`,
-    `List ${plural}. Filters by status (default: active). Returns newest first. ${idHint}.`,
-    {
-      status: z.string().optional().default("active").describe("Status filter"),
-      limit: z.number().optional().default(50).describe("Max results"),
-    },
-    ({ status, limit }) => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(app.listEntities(name, status, limit)),
-        },
-      ],
-    }),
-  );
-
-  // search_{plural}
-  server.tool(
-    `search_${plural}`,
-    `Search ${plural} with text query and/or structured filters. Text query matches across all string fields (case-insensitive). Filters support: direct equality, $gt, $gte, $lt, $lte, $ne, $in, $contains, $exists. Sort with '-field' for descending. ${idHint}.`,
-    {
-      query: z.string().optional().describe("Text search query"),
-      filter: z.record(z.string(), z.unknown()).optional().describe("Structured filters"),
-      sort: z.string().optional().default("-updated_at").describe("Sort field"),
-      limit: z.number().optional().default(20).describe("Max results"),
-    },
-    ({ query, filter, sort, limit }) => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(app.searchEntities(name, { query, filter, sort, limit })),
-        },
-      ],
-    }),
-  );
-
-  // delete_{name}
-  server.tool(
-    `delete_${name}`,
-    `Delete a ${name} by ID. Soft delete by default (sets status to 'deleted'). ` +
-      `Set hard=true to permanently remove. ${idHint}.`,
-    {
-      entity_id: z.string().describe(`${name} ID`),
-      hard: z.boolean().optional().default(false).describe("Hard delete"),
-    },
-    ({ entity_id, hard }) => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(app.deleteEntity(name, entity_id, hard)),
-        },
-      ],
-    }),
-  );
-}
+// ---------------------------------------------------------------------------
+// Server factory
+// ---------------------------------------------------------------------------
 
 /**
  * Create an MCP server from an Upjack manifest.
  *
+ * Uses the low-level Server class directly so entity JSON Schemas can be
+ * passed as raw tool inputSchema — no Zod conversion, no translation layer.
+ *
  * @param manifestPath - Path to manifest.json.
  * @param root - Workspace root directory.
- * @returns Configured McpServer instance.
+ * @returns Configured Server instance.
  */
-export function createServer(manifestPath: string, root = "."): McpServer {
+export function createServer(manifestPath: string, root = "."): Server {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
   const manifestDir = dirname(manifestPath);
 
@@ -195,64 +291,80 @@ export function createServer(manifestPath: string, root = "."): McpServer {
 
   const app = UpjackApp.fromManifest(manifestPath, root);
 
-  const server = new McpServer({
-    name: appName,
-    version: manifest.version ?? "0.1.0",
-  });
+  // Collect all tool definitions and handlers
+  const allDefinitions: ToolDefinition[] = [];
+  const allHandlers: Record<string, ToolHandler> = {};
 
-  // Register tools for each entity type
   for (const entityDef of upjack.entities ?? []) {
     const schema = app._schemas[entityDef.name];
-    registerEntityTools(server, app, entityDef, schema);
+    const { definitions, handlers } = buildEntityTools(app, entityDef, schema);
+    allDefinitions.push(...definitions);
+    Object.assign(allHandlers, handlers);
   }
 
-  // Register context resource
-  const contextFile = upjack.context;
-  if (contextFile) {
-    const contextPath = join(manifestDir, contextFile);
-    try {
-      readFileSync(contextPath, "utf-8"); // Check it exists
-      server.resource(
-        "context",
-        "upjack://context",
-        { description: "App domain knowledge" },
-        () => ({
-          contents: [
-            {
-              uri: "upjack://context",
-              text: readFileSync(contextPath, "utf-8"),
-            },
-          ],
-        }),
-      );
-    } catch {
-      // Context file doesn't exist — skip
-    }
+  // Collect resources
+  const { definitions: resourceDefs, readers: resourceReaders } = buildResources(
+    manifestDir,
+    upjack,
+  );
+
+  // Determine capabilities
+  const capabilities: Record<string, Record<string, unknown>> = {};
+  if (allDefinitions.length > 0) capabilities.tools = {};
+  if (resourceDefs.length > 0) capabilities.resources = {};
+
+  // Create the low-level Server — raw JSON Schema, no Zod
+  const server = new Server(
+    { name: appName, version: manifest.version ?? "0.1.0" },
+    { capabilities, instructions: buildInstructions(upjack) },
+  );
+
+  // tools/list — return tool definitions with raw entity JSON Schema
+  if (allDefinitions.length > 0) {
+    server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: allDefinitions,
+    }));
+
+    // tools/call — dispatch to the right entity operation
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+      const handler = allHandlers[name];
+      if (!handler) {
+        return {
+          content: [{ type: "text" as const, text: `Tool ${name} not found` }],
+          isError: true,
+        };
+      }
+      try {
+        const result = handler(args ?? {});
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: String(err) }],
+          isError: true,
+        };
+      }
+    });
   }
 
-  // Register skill resources
-  for (const skill of upjack.skills ?? []) {
-    if (skill.source !== "bundled") continue;
-    const skillPath = join(manifestDir, skill.path);
-    try {
-      readFileSync(skillPath, "utf-8"); // Check it exists
-      const skillName = skillPath.split("/").slice(-2, -1)[0];
-      server.resource(
-        skillName,
-        `upjack://skills/${skillName}`,
-        { description: `Skill: ${skillName}` },
-        () => ({
-          contents: [
-            {
-              uri: `upjack://skills/${skillName}`,
-              text: readFileSync(skillPath, "utf-8"),
-            },
-          ],
-        }),
-      );
-    } catch {
-      // Skill file doesn't exist — skip
-    }
+  // resources/list + resources/read
+  if (resourceDefs.length > 0) {
+    server.setRequestHandler(ListResourcesRequestSchema, () => ({
+      resources: resourceDefs,
+    }));
+
+    server.setRequestHandler(ReadResourceRequestSchema, (request) => {
+      const uri = request.params.uri;
+      const reader = resourceReaders[uri];
+      if (!reader) {
+        throw new Error(`Resource not found: ${uri}`);
+      }
+      return {
+        contents: [{ uri, text: reader() }],
+      };
+    });
   }
 
   return server;
@@ -268,4 +380,4 @@ export async function startServer(manifestPath: string, root = "."): Promise<voi
 }
 
 // Export for testing
-export { describeSchemaFields as _describeSchemaFields, buildInstructions as _buildInstructions };
+export { prepareEntitySchema as _prepareEntitySchema, buildInstructions as _buildInstructions };
