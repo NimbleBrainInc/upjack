@@ -23,11 +23,13 @@ class UpjackApp:
         entities: list[dict[str, Any]],
         root: str | Path = ".",
         schemas: dict[str, dict[str, Any]] | None = None,
+        manifest_dir: Path | None = None,
     ) -> None:
         self.namespace = namespace
         self.root = Path(root)
         self._entities = {e["name"]: e for e in entities}
         self._schemas = schemas or {}
+        self._manifest_dir = manifest_dir
 
     @classmethod
     def from_manifest(cls, manifest_path: str | Path, root: str | Path = ".") -> "UpjackApp":
@@ -74,7 +76,20 @@ class UpjackApp:
             entities=entities,
             root=root,
             schemas=schemas,
+            manifest_dir=manifest_dir,
         )
+
+    def reload_schema(self, entity_type: str) -> None:
+        """Reload the schema for an entity type from disk.
+
+        Raises:
+            ValueError: If entity type is unknown or manifest_dir is not set.
+        """
+        if self._manifest_dir is None:
+            raise ValueError("Cannot reload schema: manifest_dir is not set")
+        entity_def = self._get_entity_def(entity_type)
+        schema_path = self._manifest_dir / entity_def["schema"]
+        self._schemas[entity_type] = load_schema(schema_path)
 
     def _get_entity_def(self, entity_type: str) -> dict[str, Any]:
         if entity_type not in self._entities:
@@ -132,6 +147,7 @@ class UpjackApp:
             namespace=self.namespace,
             plural=self._get_plural(entity_def),
             entity_id=entity_id,
+            schema=self._schemas.get(entity_type),
         )
 
     def list_entities(
@@ -148,6 +164,7 @@ class UpjackApp:
             plural=self._get_plural(entity_def),
             status=status,
             limit=limit,
+            schema=self._schemas.get(entity_type),
         )
 
     def delete_entity(
@@ -184,4 +201,5 @@ class UpjackApp:
             filter=filter,
             sort=sort,
             limit=limit,
+            schema=self._schemas.get(entity_type),
         )
