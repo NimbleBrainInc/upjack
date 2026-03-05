@@ -601,6 +601,60 @@ class TestServerToolsWork:
 
 
 # ===========================================================================
+# JSON string deserialization (stdio transport edge case)
+# ===========================================================================
+
+
+class TestJsonStringDeserialization:
+    """Raw Tool subclasses bypass FastMCP's Pydantic deserialization.
+
+    Over stdio transport, object arguments may arrive as JSON strings instead
+    of parsed dicts.  The server must handle both forms.
+    """
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "item", "plural": "items", "prefix": "it"}],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(manifest_path, root=workspace)
+
+    def test_create_with_data_as_json_string(self, mcp):
+        """create_* should work when data arrives as a JSON string."""
+        data_str = json.dumps({"name": "StringWidget"})
+        created = _run(_call_tool(mcp, "create_item", {"data": data_str}))
+        assert created["name"] == "StringWidget"
+        assert created["id"].startswith("it_")
+
+    def test_update_with_data_as_json_string(self, mcp):
+        """update_* should work when data arrives as a JSON string."""
+        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Original"}}))
+        data_str = json.dumps({"name": "Updated"})
+        updated = _run(
+            _call_tool(
+                mcp,
+                "update_item",
+                {"entity_id": created["id"], "data": data_str},
+            )
+        )
+        assert updated["name"] == "Updated"
+
+    def test_plain_string_args_not_mangled(self, mcp):
+        """Non-JSON string arguments (like entity_id) must not be altered."""
+        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Test"}}))
+        fetched = _run(_call_tool(mcp, "get_item", {"entity_id": created["id"]}))
+        assert fetched["id"] == created["id"]
+
+    def test_dict_args_still_work(self, mcp):
+        """Native dict arguments (normal in-process path) must keep working."""
+        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "DictWidget"}}))
+        assert created["name"] == "DictWidget"
+
+
+# ===========================================================================
 # Seed tool tests
 # ===========================================================================
 

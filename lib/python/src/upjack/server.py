@@ -79,7 +79,13 @@ def _make_entity_tool(
     """
 
     async def run(self: Tool, arguments: dict[str, Any]) -> ToolResult:
-        result = handler(arguments)
+        # Raw Tool subclasses bypass FastMCP's Pydantic deserialization —
+        # object arguments may arrive as JSON strings over stdio transport
+        parsed = {
+            k: json.loads(v) if isinstance(v, str) and v.startswith(("{", "[")) else v
+            for k, v in arguments.items()
+        }
+        result = handler(parsed)
         return ToolResult(content=[TextContent(type="text", text=json.dumps(result, default=str))])
 
     tool_cls = type(f"_{name}_tool", (Tool,), {"run": run})

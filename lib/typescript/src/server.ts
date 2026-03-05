@@ -335,8 +335,22 @@ export function createServer(manifestPath: string, root = "."): Server {
           isError: true,
         };
       }
+      // Raw Server bypasses SDK's Zod deserialization —
+      // object arguments may arrive as JSON strings over stdio transport
+      const parsed: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(args ?? {})) {
+        if (typeof v === "string" && (v.startsWith("{") || v.startsWith("["))) {
+          try {
+            parsed[k] = JSON.parse(v);
+          } catch {
+            parsed[k] = v;
+          }
+        } else {
+          parsed[k] = v;
+        }
+      }
       try {
-        const result = handler(args ?? {});
+        const result = handler(parsed);
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result) }],
         };

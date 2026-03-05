@@ -468,6 +468,86 @@ describe("tool CRUD", () => {
   });
 });
 
+describe("JSON string deserialization", () => {
+  // Raw Server bypasses SDK's Zod deserialization — object arguments may
+  // arrive as JSON strings over stdio transport.  The server must handle both.
+
+  let client: Client;
+
+  beforeEach(async () => {
+    const manifestPath = makeManifest(tmpDir, [{ name: "item", plural: "items", prefix: "it" }]);
+    client = await connectClient(manifestPath, workspace);
+  });
+
+  afterEach(async () => {
+    await client.close();
+  });
+
+  it("create works when data is a JSON string", async () => {
+    const result = await client.callTool({
+      name: "create_item",
+      arguments: { data: JSON.stringify({ name: "StringWidget" }) },
+    });
+    const created = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(created.name).toBe("StringWidget");
+    expect(created.id.startsWith("it_")).toBe(true);
+  });
+
+  it("update works when data is a JSON string", async () => {
+    const createResult = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Original" } },
+    });
+    const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
+
+    const updateResult = await client.callTool({
+      name: "update_item",
+      arguments: { entity_id: created.id, data: JSON.stringify({ name: "Updated" }) },
+    });
+    const updated = JSON.parse((updateResult.content as Array<{ text: string }>)[0].text);
+    expect(updated.name).toBe("Updated");
+  });
+
+  it("search works when filter is a JSON string", async () => {
+    await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Findme" } },
+    });
+
+    const searchResult = await client.callTool({
+      name: "search_items",
+      arguments: { filter: JSON.stringify({ name: "Findme" }) },
+    });
+    const results = JSON.parse((searchResult.content as Array<{ text: string }>)[0].text);
+    expect(results).toHaveLength(1);
+    expect(results[0].name).toBe("Findme");
+  });
+
+  it("plain string args are not mangled", async () => {
+    const createResult = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Test" } },
+    });
+    const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
+
+    const getResult = await client.callTool({
+      name: "get_item",
+      arguments: { entity_id: created.id },
+    });
+    const fetched = JSON.parse((getResult.content as Array<{ text: string }>)[0].text);
+    expect(fetched.id).toBe(created.id);
+  });
+
+  it("dict args still work (normal in-process path)", async () => {
+    const result = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "DictWidget" } },
+    });
+    const created = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(created.name).toBe("DictWidget");
+  });
+});
+
 describe("resources", () => {
   it("registers context resource", async () => {
     writeFileSync(join(tmpDir, "context.md"), "# CRM Knowledge\nThis is context.");
