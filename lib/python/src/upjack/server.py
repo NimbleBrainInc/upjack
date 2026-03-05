@@ -1,30 +1,27 @@
 """FastMCP server that reads an Upjack manifest and auto-generates domain-specific tools."""
 
 import argparse
+import copy
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 try:
     from fastmcp import FastMCP
+    from fastmcp.tools.tool import Tool, ToolResult
 except ImportError as e:
     raise ImportError(
         "FastMCP is required for server functionality. Install with: pip install upjack[mcp]"
     ) from e
 
+from mcp.types import TextContent
+
 from upjack.app import UpjackApp
 
-
-def _describe_schema_fields(schema: dict[str, Any] | None) -> str:
-    """Generate a human-readable field description from JSON Schema properties."""
-    if schema is None:
-        return ""
-
-    props = schema.get("properties", {})
-    required = set(schema.get("required", []))
-
-    # Skip base entity fields — those are auto-managed
-    base_keys = {
+# Base entity fields auto-managed by the framework — stripped from tool input schemas
+_BASE_ENTITY_KEYS = frozenset(
+    {
         "id",
         "type",
         "version",
@@ -36,41 +33,57 @@ def _describe_schema_fields(schema: dict[str, Any] | None) -> str:
         "source",
         "relationships",
     }
+)
 
-    app_props = {k: v for k, v in props.items() if k not in base_keys}
-    if not app_props:
-        return ""
 
-    req_fields = []
-    opt_fields = []
+def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) -> dict[str, Any]:
+    """Prepare an entity JSON Schema for use as an MCP tool input.
 
-    for name, prop in app_props.items():
-        ptype = prop.get("type", "any")
-        parts = [f"{name} ({ptype})"]
+    Strips base entity fields (auto-managed by the framework) and JSON Schema
+    meta keywords that don't belong in a tool input schema.  For update tools,
+    removes ``required`` since updates are partial merges.
+    """
+    result = copy.deepcopy(schema)
 
-        if "enum" in prop:
-            parts.append(f"one of: {prop['enum']}")
-        if "minimum" in prop:
-            parts.append(f"min: {prop['minimum']}")
-        if "maximum" in prop:
-            parts.append(f"max: {prop['maximum']}")
-        if "format" in prop:
-            parts.append(f"format: {prop['format']}")
-        if "description" in prop:
-            parts.append(prop["description"])
+    # Strip JSON Schema meta keywords not applicable inside tool input
+    result.pop("$schema", None)
+    result.pop("$id", None)
 
-        desc = " — ".join(parts)
-        if name in required:
-            req_fields.append(desc)
-        else:
-            opt_fields.append(desc)
+    if "properties" in result:
+        result["properties"] = {
+            k: v for k, v in result["properties"].items() if k not in _BASE_ENTITY_KEYS
+        }
 
-    lines = []
-    if req_fields:
-        lines.append("Required fields: " + "; ".join(req_fields))
-    if opt_fields:
-        lines.append("Optional fields: " + "; ".join(opt_fields))
-    return ". ".join(lines)
+    if for_update:
+        # Updates are partial merges — all fields optional
+        result.pop("required", None)
+    elif "required" in result:
+        result["required"] = [r for r in result["required"] if r not in _BASE_ENTITY_KEYS]
+        if not result["required"]:
+            del result["required"]
+
+    return result
+
+
+def _make_entity_tool(
+    *,
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    handler: Callable[[dict[str, Any]], dict[str, Any]],
+) -> Tool:
+    """Create a Tool instance with raw JSON Schema parameters and a handler closure.
+
+    Uses a dynamically-created subclass so the handler is captured in the closure
+    scope — no Pydantic private-attribute hacks required.
+    """
+
+    async def run(self: Tool, arguments: dict[str, Any]) -> ToolResult:
+        result = handler(arguments)
+        return ToolResult(content=[TextContent(type="text", text=json.dumps(result, default=str))])
+
+    tool_cls = type(f"_{name}_tool", (Tool,), {"run": run})
+    return tool_cls(name=name, description=description, parameters=parameters)
 
 
 def _register_entity_tools(
@@ -84,17 +97,27 @@ def _register_entity_tools(
     plural = entity_def.get("plural", name + "s")
     prefix = entity_def["prefix"]
 
-    field_desc = _describe_schema_fields(schema)
     id_hint = f"IDs start with {prefix}_"
 
     # --- create_{name} ---
-    create_desc = f"Create a new {name}. {id_hint}."
-    if field_desc:
-        create_desc += f" {field_desc}."
+    # Use the entity's JSON Schema so LLMs see full field structure
+    if schema:
+        data_schema = _prepare_entity_schema(schema)
+    else:
+        data_schema = {"type": "object"}
 
-    @mcp.tool(name=f"create_{name}", description=create_desc)
-    def create_tool(data: dict[str, Any], _name: str = name) -> dict[str, Any]:
-        return app.create_entity(_name, data)
+    mcp.add_tool(
+        _make_entity_tool(
+            name=f"create_{name}",
+            description=f"Create a new {name}. {id_hint}.",
+            parameters={
+                "type": "object",
+                "properties": {"data": data_schema},
+                "required": ["data"],
+            },
+            handler=lambda args, _n=name: app.create_entity(_n, args["data"]),
+        )
+    )
 
     # --- get_{name} ---
     get_desc = f"Get a {name} by ID. {id_hint}."
@@ -104,13 +127,30 @@ def _register_entity_tools(
         return app.get_entity(_name, entity_id)
 
     # --- update_{name} ---
-    update_desc = f"Update a {name} by ID. Merges fields by default. {id_hint}."
-    if field_desc:
-        update_desc += f" {field_desc}."
+    # Use the entity's JSON Schema with required stripped (partial merge)
+    if schema:
+        update_data_schema = _prepare_entity_schema(schema, for_update=True)
+    else:
+        update_data_schema = {"type": "object"}
 
-    @mcp.tool(name=f"update_{name}", description=update_desc)
-    def update_tool(entity_id: str, data: dict[str, Any], _name: str = name) -> dict[str, Any]:
-        return app.update_entity(_name, entity_id, data)
+    mcp.add_tool(
+        _make_entity_tool(
+            name=f"update_{name}",
+            description=f"Update a {name} by ID. Merges fields by default. {id_hint}.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "string",
+                        "description": f"{name} ID ({prefix}_...)",
+                    },
+                    "data": update_data_schema,
+                },
+                "required": ["entity_id", "data"],
+            },
+            handler=lambda args, _n=name: app.update_entity(_n, args["entity_id"], args["data"]),
+        )
+    )
 
     # --- list_{plural} ---
     list_desc = (
