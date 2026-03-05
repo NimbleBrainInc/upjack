@@ -356,7 +356,9 @@ export function createServer(manifestPath: string, root = "."): Server {
         };
       } catch (err) {
         return {
-          content: [{ type: "text" as const, text: String(err) }],
+          content: [
+            { type: "text" as const, text: err instanceof Error ? err.message : String(err) },
+          ],
           isError: true,
         };
       }
