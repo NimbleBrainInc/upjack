@@ -634,3 +634,210 @@ class TestCorruptJsonResilience:
                 plural="contacts",
                 entity_id=created["id"],
             )
+
+
+class TestSchemaEvolution:
+    """Test that adding a field with a default doesn't break old entities."""
+
+    SCHEMA_V1 = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "type": {"type": "string"},
+            "version": {"type": "integer"},
+            "created_at": {"type": "string"},
+            "updated_at": {"type": "string"},
+            "first_name": {"type": "string"},
+            "last_name": {"type": "string"},
+        },
+        "required": [
+            "id",
+            "type",
+            "version",
+            "created_at",
+            "updated_at",
+            "first_name",
+            "last_name",
+        ],
+        "additionalProperties": True,
+    }
+
+    SCHEMA_V2 = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "type": {"type": "string"},
+            "version": {"type": "integer"},
+            "created_at": {"type": "string"},
+            "updated_at": {"type": "string"},
+            "first_name": {"type": "string"},
+            "last_name": {"type": "string"},
+            "score": {"type": "integer", "default": 0},
+        },
+        "required": [
+            "id",
+            "type",
+            "version",
+            "created_at",
+            "updated_at",
+            "first_name",
+            "last_name",
+            "score",
+        ],
+        "additionalProperties": True,
+    }
+
+    def test_get_entity_hydrates_missing_field(self, tmp_workspace):
+        """Entity created under v1 schema can be read with v2 schema."""
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"first_name": "Sarah", "last_name": "Chen"},
+            schema=self.SCHEMA_V1,
+        )
+        assert "score" not in created
+
+        result = get_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            schema=self.SCHEMA_V2,
+        )
+        assert result["score"] == 0
+        assert result["first_name"] == "Sarah"
+
+    def test_list_entities_hydrates_missing_field(self, tmp_workspace):
+        """list_entities fills defaults for old entities."""
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"first_name": "Sarah", "last_name": "Chen"},
+            schema=self.SCHEMA_V1,
+        )
+
+        results = list_entities(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            schema=self.SCHEMA_V2,
+        )
+        assert len(results) == 1
+        assert results[0]["score"] == 0
+
+    def test_update_old_entity_with_new_schema(self, tmp_workspace):
+        """Updating a v1 entity against v2 schema succeeds (hydration fills default)."""
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"first_name": "Sarah", "last_name": "Chen"},
+            schema=self.SCHEMA_V1,
+        )
+
+        # This would fail without hydration because the merged entity
+        # is missing the now-required "score" field.
+        updated = update_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            data={"first_name": "Sarah J."},
+            schema=self.SCHEMA_V2,
+        )
+        assert updated["first_name"] == "Sarah J."
+        assert updated["score"] == 0
+
+    def test_allof_ref_schema_hydration(self, tmp_workspace):
+        """Real-world schema using allOf $ref to base entity schema."""
+        SCHEMA_V1 = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "allOf": [{"$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json"}],
+            "properties": {
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
+        }
+        SCHEMA_V2 = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "allOf": [{"$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json"}],
+            "properties": {
+                "name": {"type": "string"},
+                "priority": {"type": "string", "default": "medium"},
+            },
+            "required": ["name", "priority"],
+        }
+
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="campaign",
+            plural="campaigns",
+            prefix="cp",
+            data={"name": "Q1 Push"},
+            schema=SCHEMA_V1,
+        )
+        assert "priority" not in created
+
+        result = get_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="campaigns",
+            entity_id=created["id"],
+            schema=SCHEMA_V2,
+        )
+        assert result["priority"] == "medium"
+        # Base schema defaults also applied
+        assert result["tags"] == []
+        assert result["relationships"] == []
+
+        # Update succeeds against v2 with new required field
+        updated = update_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="campaigns",
+            entity_id=created["id"],
+            data={"name": "Q1 Push (revised)"},
+            schema=SCHEMA_V2,
+        )
+        assert updated["priority"] == "medium"
+        assert updated["name"] == "Q1 Push (revised)"
+
+    def test_update_persists_hydrated_default(self, tmp_workspace):
+        """After update with hydration, the default is written to disk."""
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"first_name": "Sarah", "last_name": "Chen"},
+        )
+
+        update_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            data={"last_name": "Johnson"},
+            schema=self.SCHEMA_V2,
+        )
+
+        # Read raw (no schema) — default should now be persisted
+        raw = get_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+        )
+        assert raw["score"] == 0

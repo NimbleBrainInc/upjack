@@ -8,7 +8,7 @@ from typing import Any
 
 from upjack.ids import generate_id
 from upjack.paths import entity_dir, entity_path
-from upjack.schema import validate_entity
+from upjack.schema import hydrate_defaults, validate_entity
 
 
 @dataclass
@@ -168,6 +168,11 @@ def update_entity(
 
     existing = json.loads(path.read_text())
 
+    # Hydrate defaults before merge so old entities missing new fields
+    # get filled in — prevents validation failures on schema evolution.
+    if schema is not None:
+        existing = hydrate_defaults(existing, schema)
+
     # Strip immutable fields — these cannot be changed after creation
     immutable = {"id", "type", "version", "created_at", "created_by"}
     safe_data = {k: v for k, v in data.items() if k not in immutable}
@@ -193,17 +198,22 @@ def get_entity(
     namespace: str,
     plural: str,
     entity_id: str,
+    schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Read a single entity from disk.
+
+    If a schema is provided, missing fields are filled with schema
+    defaults before returning (hydrate-on-read).
 
     Args:
         root: Workspace root directory.
         namespace: App namespace.
         plural: Plural form.
         entity_id: Entity ID to read.
+        schema: Optional JSON Schema — used to hydrate defaults on read.
 
     Returns:
-        The entity dict.
+        The entity dict (hydrated if schema provided).
 
     Raises:
         FileNotFoundError: If the entity doesn't exist.
@@ -211,7 +221,10 @@ def get_entity(
     path = entity_path(root, namespace, plural, entity_id)
     if not path.exists():
         raise FileNotFoundError(f"Entity not found: {entity_id}")
-    return json.loads(path.read_text())
+    entity = json.loads(path.read_text())
+    if schema is not None:
+        entity = hydrate_defaults(entity, schema)
+    return entity
 
 
 def list_entities(
@@ -220,8 +233,12 @@ def list_entities(
     plural: str,
     status: str = "active",
     limit: int = 50,
+    schema: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """List entities of a given type.
+
+    If a schema is provided, missing fields are filled with schema
+    defaults before returning (hydrate-on-read).
 
     Args:
         root: Workspace root directory.
@@ -229,6 +246,7 @@ def list_entities(
         plural: Plural form.
         status: Filter by status (default 'active').
         limit: Maximum number of results.
+        schema: Optional JSON Schema — used to hydrate defaults on read.
 
     Returns:
         List of entity dicts matching the filter.
@@ -244,6 +262,8 @@ def list_entities(
         except json.JSONDecodeError:
             continue
         if entity.get("status", "active") == status:
+            if schema is not None:
+                entity = hydrate_defaults(entity, schema)
             results.append(entity)
 
     results.sort(key=lambda e: e.get("updated_at", ""), reverse=True)

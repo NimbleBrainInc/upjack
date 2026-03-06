@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from upjack.paths import entity_dir
+from upjack.schema import hydrate_defaults
 
 
 def _match_text(entity: dict[str, Any], query: str) -> bool:
@@ -72,8 +73,12 @@ def search_entities(
     filter: dict[str, Any] | None = None,
     sort: str = "-updated_at",
     limit: int = 20,
+    schema: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Search entities with text query and structured filters.
+
+    If a schema is provided, missing fields are filled with schema
+    defaults before filtering and returning (hydrate-on-read).
 
     Args:
         root: Workspace root directory.
@@ -83,6 +88,7 @@ def search_entities(
         filter: Optional structured filters (equality, comparisons, etc.).
         sort: Field name to sort by. Prefix with '-' for descending.
         limit: Maximum number of results.
+        schema: Optional JSON Schema — used to hydrate defaults on read.
 
     Returns:
         List of matching entity dicts.
@@ -98,6 +104,8 @@ def search_entities(
             entity = json.loads(file.read_text())
         except json.JSONDecodeError:
             continue
+        if schema is not None:
+            entity = hydrate_defaults(entity, schema)
         entities.append(entity)
 
     # Exclude deleted unless filter explicitly targets status
