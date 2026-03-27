@@ -367,7 +367,7 @@ def _register_add_field_tool(
         warnings = [d for d in diagnostics if d["severity"] == "warning"]
 
         # Write and reload
-        schema_path.write_text(json.dumps(new_schema, indent=2))
+        schema_path.write_text(json.dumps(new_schema, indent=2) + "\n")
         app.reload_schema(entity_type)
 
         result: dict[str, Any] = {
