@@ -191,6 +191,10 @@ Releases are automated via GitHub Actions with trusted publishers. Each library 
    git push origin main --tags
    ```
 6. The workflow verifies the tag version matches the manifest, runs all checks, and publishes
+7. Create a GitHub release with the changelog entry:
+   ```bash
+   gh release create v0.X.Y --title "v0.X.Y" --notes "<changelog entry>" --target main --latest
+   ```
 
 ### Prerequisites (one-time setup)
 
