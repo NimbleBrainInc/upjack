@@ -41,6 +41,15 @@ Activities track interactions. Common types:
 
 Always create an activity when you interact with a contact or progress a deal.
 
+## Querying Relationships
+
+Use relationship tools instead of listing all entities and filtering manually.
+
+- **Find entities by relationship**: `query_deals_by_relationship(rel="primary_contact", target_id="ct_...")` returns all deals for a contact. Works for any entity type — pass the relationship name and target ID.
+- **Follow edges**: `get_related_contact(entity_id="ct_...", direction="forward")` returns entities this contact points to. Use `direction="reverse"` to find entities that point to this contact.
+- **Load full context in one call**: `get_contact_composite(entity_id="ct_...")` returns the contact plus all related entities nested under `_related`. Forward relationships keyed by name (`works_at`), reverse keyed with tilde (`~primary_contact`). Use this before summarizing an entity.
+- **Stale results?** Run `rebuild_index()` to force-rebuild the relationship index from entity files.
+
 ## Follow-up Rules
 
 - New leads should be contacted within 24 hours

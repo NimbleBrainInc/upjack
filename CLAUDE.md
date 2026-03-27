@@ -17,6 +17,45 @@ website/          Documentation site (Astro/Starlight) — upjack.dev
 workspace/        Runtime entity data (gitignored, created at runtime)
 ```
 
+## Key Modules (Python)
+
+| Module | Purpose |
+|--------|---------|
+| `upjack.relations` | Write-time reverse relationship index — `query_reverse()`, `rebuild_index()` |
+| `upjack.activity` | Activity entity tracking — `log_activity()`, `get_activities()` |
+
+## Graph Traversal (UpjackApp)
+
+Methods for navigating entity relationships:
+
+- `query_by_relationship(entity_type, rel, target_id, filter?, limit?)` — reverse index lookup (e.g., find all deals linked to a contact)
+- `get_related(entity_id, rel?, direction?)` — follow edges forward or reverse, returns resolved entities
+- `get_composite(entity_type, entity_id, depth?)` — load entity + all related in one call; `_related` key contains forward (`rel`) and reverse (`~rel`) edges
+
+CRUD hooks: `on_relationships_changed` callback fires on `create_entity`, `update_entity`, `delete_entity` — UpjackApp auto-wires this to maintain the reverse index.
+
+## Activity Tracking
+
+Opt-in via `"activities": true` in manifest `_meta["ai.nimblebrain/upjack"]` extension.
+
+- `log_activity(subject_id, action, detail?)` — creates an activity entity with a subject relationship
+- `get_activities(subject_id, action?, limit?)` — reverse index query for a subject's activities
+- Activity schema: `action` (string, required), `detail` (object, optional)
+
+## MCP Tools (auto-registered)
+
+Per entity type (in addition to existing CRUD tools):
+
+- `query_{plural}_by_relationship(rel, target_id, filter?, limit?)`
+- `get_related_{name}(entity_id, rel?, direction?)`
+- `get_{name}_composite(entity_id, depth?)`
+
+Global tools:
+
+- `rebuild_index()` — force rebuild reverse index from entity files
+- `log_activity(subject_id, action, detail?)` — when activities enabled
+- `get_activities(subject_id, action?, limit?)` — when activities enabled
+
 ## Verification
 
 **Always run before considering work done:**
@@ -91,6 +130,8 @@ git push origin main --tags
 - **Storage**: JSON files at `{namespace}/data/{plural}/{id}.json`
 - **FastMCP is optional** — Python core works without it; install `upjack[mcp]` for server support
 - **@modelcontextprotocol/sdk is optional** — TypeScript core works without it; import `upjack/server` for server support
+- **File-based reverse index for relationships** — write-time updated at `{namespace}/data/_index/relations.json`, auto-rebuilt from entity files if missing or corrupt
+- **Activities are entities, not a separate mechanism** — opt-in via `"activities": true` in manifest, stored as regular entities (prefix `act`, plural `activities`)
 
 ## Tooling
 

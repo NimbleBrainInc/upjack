@@ -22,7 +22,7 @@ Every entity conforms to a JSON Schema (draft 2020-12). Schemas are composed via
 
 ### Git-Friendly
 
-All entity data lives as JSON files, one file per entity in a structured directory layout. The layout is optimized for git-backed workflows: the hosting platform (such as NimbleBrain) commits each write, providing a complete audit trail, branch-based workflows, and natural conflict resolution. The `upjack` library handles file I/O; git integration is a platform-level concern.
+All entity data lives as JSON files, one file per entity in a structured directory layout. The library also maintains a reverse index at `{namespace}/data/_index/relations.json`, updated at write time to support graph traversal queries. This index is a runtime artifact — it is rebuilt automatically from entity files if missing or corrupt. The layout is optimized for git-backed workflows: the hosting platform (such as NimbleBrain) commits each write, providing a complete audit trail, branch-based workflows, and natural conflict resolution. The `upjack` library handles file I/O; git integration is a platform-level concern.
 
 ### Skills Over Code
 
@@ -78,13 +78,15 @@ manifest.json
 [upjack library]
     |-- reads manifest and entity definitions
     |-- loads and composes JSON Schemas (base + app via allOf)
-    |-- provides UpjackApp with entity CRUD operations
+    |-- provides UpjackApp with entity CRUD, graph traversal, and activity tracking
     |
     v
 [MCP Server (FastMCP / MCP SDK)]
     create_server(manifest) / createServer(manifest) generates:
         create_{entity}, get_{entity}, update_{entity},
-        list_{plural}, search_{plural}, delete_{entity}
+        list_{plural}, search_{plural}, delete_{entity},
+        query_{plural}_by_relationship, get_related_{entity},
+        get_{entity}_composite, log_activity, get_activities
     + context and skill resources
     |
     v
@@ -105,6 +107,9 @@ The `upjack` library provides the core entity engine. Manifest fields like hooks
 | Schema validation (JSON Schema 2020-12) | Yes | Yes |
 | Full-text search and structured filters | Yes | Yes |
 | MCP server generation (`create_server()`) | Yes | Yes |
+| Relationship indexing (write-time reverse index) | Yes | Yes |
+| Graph traversal (`query_by_relationship`, `get_related`, `get_composite`) | Yes | Yes |
+| Activity tracking (opt-in entity-based event recording) | Yes | Yes |
 | Git commits on entity writes | No (file I/O only) | Yes |
 | Hook dispatch (react to entity events) | No (manifest metadata) | Yes |
 | Schedule execution (cron triggers) | No (manifest metadata) | Yes |
@@ -112,7 +117,7 @@ The `upjack` library provides the core entity engine. Manifest fields like hooks
 | Bundle dependency resolution | No (manifest metadata) | Yes |
 | App lifecycle (install, update, uninstall) | No | Yes |
 
-When using `upjack` standalone, hooks, schedules, views, and bundle declarations are stored in the manifest and available for inspection, but they have no effect unless a runtime interprets them.
+Relationship indexing, graph traversal, and activity tracking are handled entirely by the library and work in both standalone and hosted modes. Hooks, schedules, views, and bundle declarations are stored in the manifest and available for inspection, but they have no effect unless a runtime interprets them.
 
 ## Relationship to Existing Systems
 
