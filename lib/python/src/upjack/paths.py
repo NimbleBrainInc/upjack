@@ -59,6 +59,42 @@ def entity_path(root: str | Path, namespace: str, plural: str, entity_id: str) -
     return _check_within_root(root, target)
 
 
+def index_dir(root: str | Path, namespace: str) -> Path:
+    """Get the directory path for the relationship index.
+
+    Args:
+        root: Workspace root directory.
+        namespace: App namespace (e.g., 'apps/crm').
+
+    Returns:
+        Path to the index directory.
+
+    Raises:
+        ValueError: If the resolved path escapes the workspace root.
+    """
+    root = Path(root)
+    target = root / namespace / "data" / "_index"
+    return _check_within_root(root, target)
+
+
+def index_path(root: str | Path, namespace: str) -> Path:
+    """Get the file path for the relationship index.
+
+    Args:
+        root: Workspace root directory.
+        namespace: App namespace (e.g., 'apps/crm').
+
+    Returns:
+        Path to the relations.json index file.
+
+    Raises:
+        ValueError: If the resolved path escapes the workspace root.
+    """
+    root = Path(root)
+    target = root / namespace / "data" / "_index" / "relations.json"
+    return _check_within_root(root, target)
+
+
 def schema_dir(root: str | Path, namespace: str) -> Path:
     """Get the directory path for an app's schemas.
 

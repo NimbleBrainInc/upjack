@@ -2,6 +2,7 @@
 
 __version__ = "0.1.1"
 
+from upjack.activity import ACTIVITY_ENTITY_DEF, get_activity_schema
 from upjack.app import UpjackApp
 from upjack.entity import (
     Entity,
@@ -12,7 +13,8 @@ from upjack.entity import (
     update_entity,
 )
 from upjack.ids import generate_id, parse_id, validate_id
-from upjack.paths import entity_dir, entity_path, schema_dir
+from upjack.paths import entity_dir, entity_path, index_dir, index_path, schema_dir
+from upjack.relations import query_reverse, rebuild_index
 from upjack.schema import (
     hydrate_defaults,
     load_schema,
@@ -23,23 +25,29 @@ from upjack.schema import (
 from upjack.search import search_entities
 
 __all__ = [
-    "UpjackApp",
+    "ACTIVITY_ENTITY_DEF",
     "Entity",
+    "UpjackApp",
     "create_entity",
-    "update_entity",
-    "get_entity",
-    "list_entities",
     "delete_entity",
-    "generate_id",
-    "parse_id",
-    "validate_id",
-    "hydrate_defaults",
-    "load_schema",
-    "validate_entity",
-    "resolve_entity_schema",
-    "validate_schema_change",
-    "search_entities",
     "entity_dir",
     "entity_path",
+    "generate_id",
+    "get_activity_schema",
+    "get_entity",
+    "hydrate_defaults",
+    "index_dir",
+    "index_path",
+    "list_entities",
+    "load_schema",
+    "parse_id",
+    "query_reverse",
+    "rebuild_index",
+    "resolve_entity_schema",
     "schema_dir",
+    "search_entities",
+    "update_entity",
+    "validate_entity",
+    "validate_id",
+    "validate_schema_change",
 ]

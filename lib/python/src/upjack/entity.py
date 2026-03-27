@@ -1,6 +1,7 @@
 """Entity CRUD operations for upjack apps."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -90,6 +91,7 @@ def create_entity(
     schema: dict[str, Any] | None = None,
     schema_version: int = 1,
     created_by: str = "agent",
+    on_relationships_changed: Callable[[str, list, list], None] | None = None,
 ) -> dict[str, Any]:
     """Create a new entity, validate it, and write to disk.
 
@@ -133,6 +135,9 @@ def create_entity(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2) + "\n")
 
+    if on_relationships_changed is not None and record.get("relationships"):
+        on_relationships_changed(entity_id, [], record["relationships"])
+
     return record
 
 
@@ -144,6 +149,7 @@ def update_entity(
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     merge: bool = True,
+    on_relationships_changed: Callable[[str, list, list], None] | None = None,
 ) -> dict[str, Any]:
     """Update an existing entity.
 
@@ -167,6 +173,7 @@ def update_entity(
         raise FileNotFoundError(f"Entity not found: {entity_id}")
 
     existing = json.loads(path.read_text())
+    old_relationships = existing.get("relationships", [])
 
     # Hydrate defaults before merge so old entities missing new fields
     # get filled in — prevents validation failures on schema evolution.
@@ -190,6 +197,12 @@ def update_entity(
         validate_entity(existing, schema)
 
     path.write_text(json.dumps(existing, indent=2) + "\n")
+
+    if on_relationships_changed is not None:
+        new_relationships = existing.get("relationships", [])
+        if old_relationships != new_relationships:
+            on_relationships_changed(entity_id, old_relationships, new_relationships)
+
     return existing
 
 
@@ -276,6 +289,7 @@ def delete_entity(
     plural: str,
     entity_id: str,
     hard: bool = False,
+    on_relationships_changed: Callable[[str, list, list], None] | None = None,
 ) -> dict[str, Any]:
     """Delete an entity (soft delete by default).
 
@@ -300,6 +314,8 @@ def delete_entity(
 
     if hard:
         path.unlink()
+        if on_relationships_changed is not None and entity.get("relationships"):
+            on_relationships_changed(entity_id, entity["relationships"], [])
     else:
         entity["status"] = "deleted"
         entity["updated_at"] = _now_iso()

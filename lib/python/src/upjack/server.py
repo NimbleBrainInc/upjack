@@ -18,7 +18,9 @@ except ImportError as e:
 
 from mcp.types import TextContent
 
+from upjack.activity import ACTIVITY_ENTITY_DEF
 from upjack.app import UpjackApp
+from upjack.relations import rebuild_index
 from upjack.schema import load_schema, validate_schema_change
 
 # Base entity fields auto-managed by the framework — stripped from tool input schemas
@@ -385,6 +387,161 @@ def _register_add_field_tool(
         return result
 
 
+def _register_relationship_tools(
+    mcp: FastMCP,
+    app: UpjackApp,
+    entity_def: dict[str, Any],
+) -> None:
+    """Register relationship query tools for an entity type."""
+    name = entity_def["name"]
+    plural = entity_def.get("plural", name + "s")
+
+    @mcp.tool(
+        name=f"query_{plural}_by_relationship",
+        description=(
+            f"Find {plural} that have a specific relationship pointing to a target entity. "
+            f"For example, find all {plural} that 'belongs_to' a given entity."
+        ),
+    )
+    def query_by_rel(
+        rel: str,
+        target_id: str,
+        filter: dict[str, Any] | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return app.query_by_relationship(name, rel, target_id, filter=filter, limit=limit)
+
+    @mcp.tool(
+        name=f"get_related_{name}",
+        description=(
+            f"Follow relationship edges from a {name}. "
+            f"'forward' returns entities this {name} points to. "
+            f"'reverse' returns entities that point to this {name}."
+        ),
+    )
+    def get_related(
+        entity_id: str,
+        rel: str | None = None,
+        direction: str = "forward",
+    ) -> list[dict[str, Any]]:
+        return app.get_related(entity_id, rel=rel, direction=direction)
+
+    @mcp.tool(
+        name=f"get_{name}_composite",
+        description=(
+            f"Load a {name} with all related entities in one call. "
+            f"Returns the entity with a '_related' key containing forward "
+            f"relationships (keyed by rel name) and reverse relationships "
+            f"(keyed by ~rel name)."
+        ),
+    )
+    def get_composite(
+        entity_id: str,
+        depth: int = 1,
+    ) -> dict[str, Any]:
+        return app.get_composite(name, entity_id, depth=depth)
+
+
+def _register_rebuild_index_tool(
+    mcp: FastMCP,
+    app: UpjackApp,
+) -> None:
+    """Register the global rebuild_index tool."""
+
+    @mcp.tool(
+        name="rebuild_index",
+        description=(
+            "Force a full rebuild of the relationship index from entity files. "
+            "Use this if the index seems stale or after manual file edits."
+        ),
+    )
+    def do_rebuild_index() -> dict[str, Any]:
+        index = rebuild_index(
+            app.root,
+            app.namespace,
+            app._entity_defs_list(),
+        )
+        total = sum(len(entries) for entries in index.get("reverse", {}).values())
+        return {"success": True, "entries": total}
+
+
+def _register_activity_tools(mcp: FastMCP, app: UpjackApp) -> None:
+    """Register convenience tools for activity tracking.
+
+    These are higher-level than the raw CRUD tools (create_activity, etc.)
+    because they auto-wire the subject relationship and provide a simpler
+    interface for logging and querying activities.
+    """
+
+    mcp.add_tool(
+        _make_entity_tool(
+            name="log_activity",
+            description=(
+                "Log an activity against an entity. Auto-wires a 'subject' relationship "
+                "to the given entity. Use this instead of create_activity when you want "
+                "the relationship set up automatically."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "subject_id": {
+                        "type": "string",
+                        "description": "The entity ID this activity is about.",
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "What happened (e.g., 'email_sent', 'meeting_held').",
+                    },
+                    "detail": {
+                        "type": "object",
+                        "description": "Optional structured data about the activity.",
+                    },
+                },
+                "required": ["subject_id", "action"],
+            },
+            handler=lambda args: app.log_activity(
+                subject_id=args["subject_id"],
+                action=args["action"],
+                detail=args.get("detail"),
+            ),
+        )
+    )
+
+    mcp.add_tool(
+        _make_entity_tool(
+            name="get_activities",
+            description=(
+                "Get activities recorded against an entity. Returns activities sorted "
+                "most-recent first. Optionally filter by action type."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "subject_id": {
+                        "type": "string",
+                        "description": "The entity ID to get activities for.",
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "Optional filter — only return activities with this action.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default 50).",
+                        "default": 50,
+                    },
+                },
+                "required": ["subject_id"],
+            },
+            handler=lambda args: app.get_activities(
+                subject_id=args["subject_id"],
+                action=args.get("action"),
+                limit=args.get("limit", 50),
+            ),
+        )
+    )
+
+
 def _register_resources(
     mcp: FastMCP,
     manifest_dir: Path,
@@ -477,11 +634,25 @@ def create_server(manifest_path: str | Path, root: str | Path = ".") -> FastMCP:
         schema = app._schemas.get(entity_def["name"])
         _register_entity_tools(mcp, app, entity_def, schema)
 
+    # Register activity CRUD tools + convenience tools when activities enabled
+    if upjack.get("activities"):
+        activity_schema = app._schemas.get("activity")
+        _register_entity_tools(mcp, app, ACTIVITY_ENTITY_DEF, activity_schema)
+        _register_activity_tools(mcp, app)
+
     # Register seed tool
     _register_seed_tool(mcp, app, manifest_dir, upjack)
 
     # Register add_field tool
     _register_add_field_tool(mcp, app, manifest_dir)
+
+    # Register relationship tools for each entity type
+    for entity_def in upjack.get("entities", []):
+        _register_relationship_tools(mcp, app, entity_def)
+    # Also register for activity if enabled
+    if upjack.get("activities"):
+        _register_relationship_tools(mcp, app, ACTIVITY_ENTITY_DEF)
+    _register_rebuild_index_tool(mcp, app)
 
     # Register resources
     _register_resources(mcp, manifest_dir, upjack)

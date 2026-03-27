@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from upjack.paths import entity_dir, entity_path, schema_dir
+from upjack.paths import entity_dir, entity_path, index_dir, index_path, schema_dir
 
 
 class TestSchemaDir:
@@ -20,6 +20,44 @@ class TestSchemaDir:
 
     def test_different_namespaces(self):
         assert schema_dir("/ws", "apps/crm") != schema_dir("/ws", "apps/research")
+
+
+class TestIndexDir:
+    def test_returns_correct_path(self):
+        result = index_dir(Path("/workspace"), "apps/crm")
+        assert result == Path("/workspace/apps/crm/data/_index")
+
+    def test_accepts_string_root(self):
+        result = index_dir("/workspace", "apps/crm")
+        assert result == Path("/workspace/apps/crm/data/_index")
+
+    def test_traversal_rejected(self, tmp_path):
+        root = tmp_path / "workspace"
+        root.mkdir()
+        with pytest.raises(ValueError, match="Path escapes workspace root"):
+            index_dir(root, "../../etc")
+
+
+class TestIndexPath:
+    def test_returns_correct_path(self):
+        result = index_path(Path("/workspace"), "apps/crm")
+        assert result == Path("/workspace/apps/crm/data/_index/relations.json")
+
+    def test_accepts_string_root(self):
+        result = index_path("/workspace", "apps/crm")
+        assert result == Path("/workspace/apps/crm/data/_index/relations.json")
+
+    def test_is_child_of_index_dir(self):
+        d = index_dir("/ws", "apps/crm")
+        p = index_path("/ws", "apps/crm")
+        assert p.parent == d
+        assert p.name == "relations.json"
+
+    def test_traversal_rejected(self, tmp_path):
+        root = tmp_path / "workspace"
+        root.mkdir()
+        with pytest.raises(ValueError, match="Path escapes workspace root"):
+            index_path(root, "../../etc")
 
 
 class TestPathConsistency:
