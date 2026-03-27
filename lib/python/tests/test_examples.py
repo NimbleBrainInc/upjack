@@ -829,9 +829,7 @@ class TestSchemaEvolutionCrm:
         assert result["success"] is True
 
         # Old contact should get the default via hydrate-on-read
-        fetched = _run(
-            _call_tool(mcp, "get_contact", {"entity_id": contact["id"]})
-        )
+        fetched = _run(_call_tool(mcp, "get_contact", {"entity_id": contact["id"]}))
         assert fetched["engagement_score"] == 0
         assert fetched["first_name"] == "Alice"
 
@@ -885,9 +883,7 @@ class TestSchemaEvolutionCrm:
             )
         )
 
-        results = _run(
-            _call_tool(mcp, "search_contacts", {"query": "Charlie"})
-        )
+        results = _run(_call_tool(mcp, "search_contacts", {"query": "Charlie"}))
         assert len(results) == 1
         assert results[0]["is_vip"] is False
 
@@ -929,9 +925,7 @@ class TestSchemaEvolutionTodo:
         )
         assert result["success"] is True
 
-        fetched = _run(
-            _call_tool(mcp, "get_task", {"entity_id": task["id"]})
-        )
+        fetched = _run(_call_tool(mcp, "get_task", {"entity_id": task["id"]}))
         assert fetched["story_points"] == 1
         assert fetched["title"] == "Write tests"
 
@@ -973,8 +967,6 @@ class TestSchemaEvolutionResearch:
         )
         assert result["success"] is True
 
-        fetched = _run(
-            _call_tool(mcp, "get_topic", {"entity_id": topic["id"]})
-        )
+        fetched = _run(_call_tool(mcp, "get_topic", {"entity_id": topic["id"]}))
         assert fetched["confidence_level"] == "low"
         assert fetched["title"] == "AI Safety"
