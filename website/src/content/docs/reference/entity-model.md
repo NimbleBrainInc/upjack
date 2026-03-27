@@ -364,8 +364,8 @@ companies = app.get_related("ld_01HZ...5X", rel="works_at")
 # Reverse: get entities that point to this company
 inbound = app.get_related("co_01HZ...5Y", direction="reverse")
 
-# Both directions
-all_related = app.get_related("ld_01HZ...5X", direction="both")
+# Reverse, specific relationship
+leads = app.get_related("co_01HZ...5Y", rel="works_at", direction="reverse")
 ```
 
 ### `get_composite`
