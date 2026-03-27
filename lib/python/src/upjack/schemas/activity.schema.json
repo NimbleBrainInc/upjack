@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Upjack Activity",
+  "description": "A logged event or action recorded against another entity. Built-in activity type for Upjack apps with activities enabled.",
+  "allOf": [
+    { "$ref": "https://upjack.dev/schemas/v1/upjack-entity.schema.json" }
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "The action that occurred (e.g., 'email_sent', 'status_changed', 'note_added')"
+    },
+    "detail": {
+      "type": "object",
+      "description": "Additional structured data about the activity",
+      "default": {}
+    }
+  },
+  "required": ["action"]
+}

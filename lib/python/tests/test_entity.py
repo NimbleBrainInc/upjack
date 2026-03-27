@@ -841,3 +841,173 @@ class TestSchemaEvolution:
             entity_id=created["id"],
         )
         assert raw["score"] == 0
+
+
+class TestRelationshipCallbacks:
+    """Test the on_relationships_changed callback on CRUD operations."""
+
+    def test_create_with_relationships_fires_callback(self, tmp_workspace):
+        calls = []
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": "co_01ABC"}],
+            },
+            on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
+        )
+        assert len(calls) == 1
+        assert calls[0][0] == created["id"]
+        assert calls[0][1] == []
+        assert calls[0][2] == [{"rel": "works_at", "target": "co_01ABC"}]
+
+    def test_create_without_relationships_no_callback(self, tmp_workspace):
+        calls = []
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"first_name": "Alice"},
+            on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
+        )
+        assert len(calls) == 0
+
+    def test_create_without_callback_no_error(self, tmp_workspace):
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": "co_01ABC"}],
+            },
+        )
+        assert created["relationships"] == [{"rel": "works_at", "target": "co_01ABC"}]
+
+    def test_update_changed_relationships_fires_callback(self, tmp_workspace):
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": "co_01OLD"}],
+            },
+        )
+
+        calls = []
+        update_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            data={"relationships": [{"rel": "works_at", "target": "co_01NEW"}]},
+            on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
+        )
+        assert len(calls) == 1
+        assert calls[0][0] == created["id"]
+        assert calls[0][1] == [{"rel": "works_at", "target": "co_01OLD"}]
+        assert calls[0][2] == [{"rel": "works_at", "target": "co_01NEW"}]
+
+    def test_update_unchanged_relationships_no_callback(self, tmp_workspace):
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": "co_01ABC"}],
+            },
+        )
+
+        calls = []
+        update_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            data={"first_name": "Alice Updated"},
+            on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
+        )
+        assert len(calls) == 0
+
+    def test_update_without_callback_no_error(self, tmp_workspace):
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"first_name": "Alice"},
+        )
+        updated = update_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            data={"relationships": [{"rel": "works_at", "target": "co_01ABC"}]},
+        )
+        assert updated["relationships"] == [{"rel": "works_at", "target": "co_01ABC"}]
+
+    def test_hard_delete_fires_callback(self, tmp_workspace):
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": "co_01ABC"}],
+            },
+        )
+
+        calls = []
+        delete_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            hard=True,
+            on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
+        )
+        assert len(calls) == 1
+        assert calls[0][0] == created["id"]
+        assert calls[0][1] == [{"rel": "works_at", "target": "co_01ABC"}]
+        assert calls[0][2] == []
+
+    def test_soft_delete_no_callback(self, tmp_workspace):
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": "co_01ABC"}],
+            },
+        )
+
+        calls = []
+        delete_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            plural="contacts",
+            entity_id=created["id"],
+            hard=False,
+            on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
+        )
+        assert len(calls) == 0

@@ -83,6 +83,7 @@ def _make_manifest(
     context: str | None = None,
     skills: list[dict] | None = None,
     seed: dict | None = None,
+    activities: bool = False,
     display_name: str = "Test App",
 ) -> Path:
     """Create a manifest with schema files on disk."""
@@ -114,6 +115,8 @@ def _make_manifest(
         upjack["skills"] = skills
     if seed:
         upjack["seed"] = seed
+    if activities:
+        upjack["activities"] = True
 
     manifest = {
         "manifest_version": "0.4",
@@ -355,6 +358,10 @@ class TestCreateServer:
             "search_widgets",
             "delete_widget",
             "add_field",
+            "query_widgets_by_relationship",
+            "get_related_widget",
+            "get_widget_composite",
+            "rebuild_index",
         }
 
     def test_multiple_entity_types(self, tmp_path):
@@ -368,8 +375,8 @@ class TestCreateServer:
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         tools = _run(_list_tool_names(mcp))
 
-        # 6 tools per entity × 2 entities + 1 add_field = 13
-        assert len(tools) == 13
+        # (6 CRUD + 3 relationship) per entity × 2 + 1 add_field + 1 rebuild_index = 20
+        assert len(tools) == 20
         assert "create_contact" in tools
         assert "search_deals" in tools
 
@@ -1171,3 +1178,317 @@ class TestAddFieldTool:
         )
         assert "error" in result
         assert "escapes" in result["error"]
+
+
+# ===========================================================================
+# Relationship tool tests
+# ===========================================================================
+
+
+class TestRelationshipTools:
+    """Test the auto-generated relationship query tools."""
+
+    @pytest.fixture
+    def setup(self, tmp_path):
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {"name": "contact", "plural": "contacts", "prefix": "ct"},
+                {"name": "company", "plural": "companies", "prefix": "co"},
+            ],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        mcp = create_server(manifest_path, root=workspace)
+        return mcp
+
+    def test_relationship_tools_registered(self, setup):
+        mcp = setup
+        tools = _run(_list_tool_names(mcp))
+        assert "query_contacts_by_relationship" in tools
+        assert "get_related_contact" in tools
+        assert "get_contact_composite" in tools
+        assert "query_companies_by_relationship" in tools
+        assert "get_related_company" in tools
+        assert "get_company_composite" in tools
+        assert "rebuild_index" in tools
+
+    def test_query_by_relationship_through_mcp(self, setup):
+        mcp = setup
+        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {
+                    "data": {
+                        "name": "Alice",
+                        "relationships": [{"rel": "works_at", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+
+        results = _run(
+            _call_tool(
+                mcp,
+                "query_contacts_by_relationship",
+                {"rel": "works_at", "target_id": company["id"]},
+            )
+        )
+        assert len(results) == 1
+        assert results[0]["name"] == "Alice"
+
+    def test_get_related_forward_through_mcp(self, setup):
+        mcp = setup
+        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        contact = _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {
+                    "data": {
+                        "name": "Alice",
+                        "relationships": [{"rel": "works_at", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+
+        results = _run(
+            _call_tool(
+                mcp,
+                "get_related_contact",
+                {"entity_id": contact["id"], "direction": "forward"},
+            )
+        )
+        assert len(results) == 1
+        assert results[0]["id"] == company["id"]
+
+    def test_get_related_reverse_through_mcp(self, setup):
+        mcp = setup
+        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        contact = _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {
+                    "data": {
+                        "name": "Alice",
+                        "relationships": [{"rel": "works_at", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+
+        results = _run(
+            _call_tool(
+                mcp,
+                "get_related_company",
+                {"entity_id": company["id"], "direction": "reverse"},
+            )
+        )
+        assert len(results) == 1
+        assert results[0]["id"] == contact["id"]
+
+    def test_get_composite_through_mcp(self, setup):
+        mcp = setup
+        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        contact = _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {
+                    "data": {
+                        "name": "Alice",
+                        "relationships": [{"rel": "works_at", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+
+        result = _run(
+            _call_tool(
+                mcp,
+                "get_contact_composite",
+                {"entity_id": contact["id"]},
+            )
+        )
+        assert "_related" in result
+        assert "works_at" in result["_related"]
+        assert result["_related"]["works_at"][0]["id"] == company["id"]
+
+    def test_rebuild_index_through_mcp(self, setup):
+        mcp = setup
+        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {
+                    "data": {
+                        "name": "Alice",
+                        "relationships": [{"rel": "works_at", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+
+        result = _run(_call_tool(mcp, "rebuild_index", {}))
+        assert result["success"] is True
+        assert result["entries"] >= 1
+
+
+# ===========================================================================
+# Activity tool tests
+# ===========================================================================
+
+
+class TestActivityTools:
+    """Test activity convenience tools (log_activity, get_activities)."""
+
+    @pytest.fixture
+    def mcp_with_activities(self, tmp_path):
+        """Create a server with activities enabled."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "contact", "plural": "contacts", "prefix": "ct"}],
+            activities=True,
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(manifest_path, root=workspace)
+
+    @pytest.fixture
+    def mcp_without_activities(self, tmp_path):
+        """Create a server without activities enabled."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "contact", "plural": "contacts", "prefix": "ct"}],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(manifest_path, root=workspace)
+
+    def test_log_activity_registered_when_enabled(self, mcp_with_activities):
+        tools = _run(_list_tool_names(mcp_with_activities))
+        assert "log_activity" in tools
+
+    def test_get_activities_registered_when_enabled(self, mcp_with_activities):
+        tools = _run(_list_tool_names(mcp_with_activities))
+        assert "get_activities" in tools
+
+    def test_activity_crud_tools_registered_when_enabled(self, mcp_with_activities):
+        tools = _run(_list_tool_names(mcp_with_activities))
+        assert "create_activity" in tools
+        assert "list_activities" in tools
+        assert "get_activity" in tools
+        assert "update_activity" in tools
+        assert "search_activities" in tools
+        assert "delete_activity" in tools
+
+    def test_log_activity_not_registered_when_disabled(self, mcp_without_activities):
+        tools = _run(_list_tool_names(mcp_without_activities))
+        assert "log_activity" not in tools
+
+    def test_get_activities_not_registered_when_disabled(self, mcp_without_activities):
+        tools = _run(_list_tool_names(mcp_without_activities))
+        assert "get_activities" not in tools
+
+    def test_activity_crud_not_registered_when_disabled(self, mcp_without_activities):
+        tools = _run(_list_tool_names(mcp_without_activities))
+        assert "create_activity" not in tools
+        assert "list_activities" not in tools
+
+    def test_log_activity_creates_activity_with_relationship(self, mcp_with_activities):
+        contact = _run(
+            _call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Alice"}})
+        )
+        activity = _run(
+            _call_tool(
+                mcp_with_activities,
+                "log_activity",
+                {
+                    "subject_id": contact["id"],
+                    "action": "email_sent",
+                    "detail": {"to": "alice@example.com"},
+                },
+            )
+        )
+        assert activity["id"].startswith("act_")
+        assert activity["action"] == "email_sent"
+        assert activity["detail"] == {"to": "alice@example.com"}
+        # Verify the subject relationship was auto-wired
+        rels = activity.get("relationships", [])
+        assert any(r["rel"] == "subject" and r["target"] == contact["id"] for r in rels)
+
+    def test_log_activity_without_detail(self, mcp_with_activities):
+        contact = _run(_call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Bob"}}))
+        activity = _run(
+            _call_tool(
+                mcp_with_activities,
+                "log_activity",
+                {"subject_id": contact["id"], "action": "viewed"},
+            )
+        )
+        assert activity["action"] == "viewed"
+        assert activity["detail"] == {}
+
+    def test_get_activities_returns_activities_for_subject(self, mcp_with_activities):
+        contact = _run(
+            _call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Alice"}})
+        )
+        _run(
+            _call_tool(
+                mcp_with_activities,
+                "log_activity",
+                {"subject_id": contact["id"], "action": "email_sent"},
+            )
+        )
+        _run(
+            _call_tool(
+                mcp_with_activities,
+                "log_activity",
+                {"subject_id": contact["id"], "action": "meeting_held"},
+            )
+        )
+
+        activities = _run(
+            _call_tool(
+                mcp_with_activities,
+                "get_activities",
+                {"subject_id": contact["id"]},
+            )
+        )
+        assert len(activities) == 2
+        actions = {a["action"] for a in activities}
+        assert actions == {"email_sent", "meeting_held"}
+
+    def test_get_activities_filters_by_action(self, mcp_with_activities):
+        contact = _run(
+            _call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Alice"}})
+        )
+        _run(
+            _call_tool(
+                mcp_with_activities,
+                "log_activity",
+                {"subject_id": contact["id"], "action": "email_sent"},
+            )
+        )
+        _run(
+            _call_tool(
+                mcp_with_activities,
+                "log_activity",
+                {"subject_id": contact["id"], "action": "meeting_held"},
+            )
+        )
+
+        activities = _run(
+            _call_tool(
+                mcp_with_activities,
+                "get_activities",
+                {"subject_id": contact["id"], "action": "email_sent"},
+            )
+        )
+        assert len(activities) == 1
+        assert activities[0]["action"] == "email_sent"

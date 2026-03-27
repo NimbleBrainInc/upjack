@@ -422,7 +422,7 @@ class TestCrmServer:
     def test_registers_all_crm_tools(self, mcp):
         tools = _run(_list_tool_names(mcp))
 
-        # 5 entity types × 6 tools = 30 + seed_data = 31
+        # 5 entity types × (6 CRUD + 3 relationship) = 45 + seed + add_field + rebuild_index = 48
         expected_entity_tools = set()
         for name, plural in [
             ("contact", "contacts"),
@@ -438,11 +438,16 @@ class TestCrmServer:
                 f"list_{plural}",
                 f"search_{plural}",
                 f"delete_{name}",
+                f"query_{plural}_by_relationship",
+                f"get_related_{name}",
+                f"get_{name}_composite",
             }
 
         for tool in expected_entity_tools:
             assert tool in tools, f"Missing tool: {tool}"
         assert "seed_data" in tools
+        assert "add_field" in tools
+        assert "rebuild_index" in tools
 
     def test_registers_context_and_skill_resources(self, mcp):
         uris = _run(_list_resource_uris(mcp))
@@ -970,3 +975,228 @@ class TestSchemaEvolutionResearch:
         fetched = _run(_call_tool(mcp, "get_topic", {"entity_id": topic["id"]}))
         assert fetched["confidence_level"] == "low"
         assert fetched["title"] == "AI Safety"
+
+
+# ===========================================================================
+# Relationship & Graph Traversal E2E Tests
+# ===========================================================================
+
+
+class TestCrmRelationships:
+    """Test relationship indexing and graph traversal against real CRM schemas."""
+
+    @pytest.fixture
+    def crm(self, tmp_path):
+        return UpjackApp.from_manifest(CRM_DIR / "manifest.json", root=tmp_path)
+
+    def test_relationship_index_built_on_create(self, crm):
+        """Creating entities with relationships populates the reverse index."""
+        company = crm.create_entity("company", {"name": "Acme", "industry": "Technology"})
+        contact = crm.create_entity(
+            "contact",
+            {
+                "first_name": "Sarah",
+                "last_name": "Chen",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+        deal = crm.create_entity(
+            "deal",
+            {
+                "title": "Acme Agent Platform",
+                "stage": "qualification",
+                "value": 48000,
+                "relationships": [
+                    {"rel": "primary_contact", "target": contact["id"]},
+                    {"rel": "company", "target": company["id"]},
+                ],
+            },
+        )
+
+        # Reverse query: who works at Acme?
+        related = crm.get_related(company["id"], direction="reverse")
+        ids = {r["id"] for r in related}
+        assert contact["id"] in ids
+        assert deal["id"] in ids
+
+    def test_query_by_relationship(self, crm):
+        """query_by_relationship finds deals for a company."""
+        company = crm.create_entity("company", {"name": "Acme", "industry": "Technology"})
+        deal = crm.create_entity(
+            "deal",
+            {
+                "title": "Big Deal",
+                "stage": "new",
+                "relationships": [{"rel": "company", "target": company["id"]}],
+            },
+        )
+        crm.create_entity("deal", {"title": "Unrelated Deal", "stage": "new"})
+
+        results = crm.query_by_relationship("deal", "company", company["id"])
+        assert len(results) == 1
+        assert results[0]["id"] == deal["id"]
+
+    def test_get_related_forward(self, crm):
+        """Forward traversal resolves target entities."""
+        company = crm.create_entity("company", {"name": "Acme", "industry": "Technology"})
+        contact = crm.create_entity(
+            "contact",
+            {
+                "first_name": "Sarah",
+                "last_name": "Chen",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+
+        results = crm.get_related(contact["id"], direction="forward")
+        assert len(results) == 1
+        assert results[0]["name"] == "Acme"
+
+    def test_get_composite_deal(self, crm):
+        """get_composite on a deal returns related contact and company."""
+        company = crm.create_entity("company", {"name": "Acme", "industry": "Technology"})
+        contact = crm.create_entity(
+            "contact",
+            {
+                "first_name": "Sarah",
+                "last_name": "Chen",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+        deal = crm.create_entity(
+            "deal",
+            {
+                "title": "Acme Agent Platform",
+                "stage": "qualification",
+                "value": 48000,
+                "relationships": [
+                    {"rel": "primary_contact", "target": contact["id"]},
+                    {"rel": "company", "target": company["id"]},
+                ],
+            },
+        )
+
+        composite = crm.get_composite("deal", deal["id"])
+        assert "primary_contact" in composite["_related"]
+        assert "company" in composite["_related"]
+        assert composite["_related"]["primary_contact"][0]["first_name"] == "Sarah"
+        assert composite["_related"]["company"][0]["name"] == "Acme"
+
+
+class TestCrmRelationshipServer:
+    """Test relationship MCP tools against real CRM server."""
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        import shutil
+
+        app_dir = tmp_path / "app"
+        shutil.copytree(CRM_DIR, app_dir)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(app_dir / "manifest.json", root=workspace)
+
+    def test_query_deals_by_relationship_tool(self, mcp):
+        company = _run(
+            _call_tool(mcp, "create_company", {"data": {"name": "Acme", "industry": "Tech"}})
+        )
+        deal = _run(
+            _call_tool(
+                mcp,
+                "create_deal",
+                {
+                    "data": {
+                        "title": "Big Deal",
+                        "stage": "new",
+                        "relationships": [{"rel": "company", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+
+        results = _run(
+            _call_tool(
+                mcp,
+                "query_deals_by_relationship",
+                {"rel": "company", "target_id": company["id"]},
+            )
+        )
+        assert len(results) == 1
+        assert results[0]["id"] == deal["id"]
+
+    def test_get_deal_composite_tool(self, mcp):
+        company = _run(
+            _call_tool(mcp, "create_company", {"data": {"name": "Acme", "industry": "Tech"}})
+        )
+        contact = _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {
+                    "data": {
+                        "first_name": "Sarah",
+                        "last_name": "Chen",
+                        "relationships": [{"rel": "works_at", "target": company["id"]}],
+                    }
+                },
+            )
+        )
+        deal = _run(
+            _call_tool(
+                mcp,
+                "create_deal",
+                {
+                    "data": {
+                        "title": "Agent Platform",
+                        "stage": "qualification",
+                        "value": 48000,
+                        "relationships": [
+                            {"rel": "primary_contact", "target": contact["id"]},
+                            {"rel": "company", "target": company["id"]},
+                        ],
+                    }
+                },
+            )
+        )
+
+        result = _run(_call_tool(mcp, "get_deal_composite", {"entity_id": deal["id"]}))
+        assert "primary_contact" in result["_related"]
+        assert "company" in result["_related"]
+
+    def test_rebuild_index_tool(self, mcp):
+        _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme", "industry": "Tech"}}))
+        result = _run(_call_tool(mcp, "rebuild_index", {}))
+        assert result["success"] is True
+
+
+class TestTodoRelationships:
+    """Test relationship features against real Todo schemas."""
+
+    @pytest.fixture
+    def todo(self, tmp_path):
+        return UpjackApp.from_manifest(TODO_DIR / "manifest.json", root=tmp_path)
+
+    def test_task_project_relationship(self, todo):
+        project = todo.create_entity("project", {"name": "Q1 Planning"})
+        task = todo.create_entity(
+            "task",
+            {
+                "title": "Write roadmap",
+                "relationships": [{"rel": "belongs_to", "target": project["id"]}],
+            },
+        )
+
+        # Reverse: find tasks for a project
+        results = todo.query_by_relationship("task", "belongs_to", project["id"])
+        assert len(results) == 1
+        assert results[0]["id"] == task["id"]
+
+        # Forward: task → project
+        related = todo.get_related(task["id"], direction="forward")
+        assert len(related) == 1
+        assert related[0]["name"] == "Q1 Planning"
+
+        # Composite on project shows reverse relationships
+        composite = todo.get_composite("project", project["id"])
+        assert "~belongs_to" in composite["_related"]
+        assert composite["_related"]["~belongs_to"][0]["title"] == "Write roadmap"

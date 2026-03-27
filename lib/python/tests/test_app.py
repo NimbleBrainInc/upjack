@@ -404,3 +404,120 @@ class TestReloadSchema:
         )
         with pytest.raises(ValueError, match="manifest_dir"):
             app.reload_schema("widget")
+
+
+class TestRelationshipIndexWiring:
+    """Test that UpjackApp automatically maintains the relationship index."""
+
+    def test_create_with_relationships_updates_index(self, tmp_workspace):
+        app = UpjackApp(namespace=NAMESPACE, entities=ENTITIES, root=tmp_workspace)
+        company = app.create_entity("company", {"name": "Acme"})
+        app.create_entity(
+            "contact",
+            {
+                "first_name": "Alice",
+                "last_name": "Chen",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+
+        # Check index file
+        index_file = tmp_workspace / NAMESPACE / "data" / "_index" / "relations.json"
+        assert index_file.exists()
+        index = json.loads(index_file.read_text())
+        entries = index["reverse"].get(company["id"], [])
+        assert len(entries) == 1
+        assert entries[0]["rel"] == "works_at"
+
+    def test_two_entities_pointing_to_same_target(self, tmp_workspace):
+        app = UpjackApp(namespace=NAMESPACE, entities=ENTITIES, root=tmp_workspace)
+        company = app.create_entity("company", {"name": "Acme"})
+        app.create_entity(
+            "contact",
+            {
+                "first_name": "Alice",
+                "last_name": "A",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+        app.create_entity(
+            "contact",
+            {
+                "first_name": "Bob",
+                "last_name": "B",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+
+        index_file = tmp_workspace / NAMESPACE / "data" / "_index" / "relations.json"
+        index = json.loads(index_file.read_text())
+        entries = index["reverse"][company["id"]]
+        assert len(entries) == 2
+
+    def test_update_changes_index(self, tmp_workspace):
+        app = UpjackApp(namespace=NAMESPACE, entities=ENTITIES, root=tmp_workspace)
+        old_co = app.create_entity("company", {"name": "Old Co"})
+        new_co = app.create_entity("company", {"name": "New Co"})
+        contact = app.create_entity(
+            "contact",
+            {
+                "first_name": "Alice",
+                "last_name": "A",
+                "relationships": [{"rel": "works_at", "target": old_co["id"]}],
+            },
+        )
+
+        app.update_entity(
+            "contact",
+            contact["id"],
+            {"relationships": [{"rel": "works_at", "target": new_co["id"]}]},
+        )
+
+        index_file = tmp_workspace / NAMESPACE / "data" / "_index" / "relations.json"
+        index = json.loads(index_file.read_text())
+        assert old_co["id"] not in index["reverse"]
+        assert len(index["reverse"][new_co["id"]]) == 1
+
+    def test_hard_delete_removes_from_index(self, tmp_workspace):
+        app = UpjackApp(namespace=NAMESPACE, entities=ENTITIES, root=tmp_workspace)
+        company = app.create_entity("company", {"name": "Acme"})
+        contact = app.create_entity(
+            "contact",
+            {
+                "first_name": "Alice",
+                "last_name": "A",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+
+        app.delete_entity("contact", contact["id"], hard=True)
+
+        index_file = tmp_workspace / NAMESPACE / "data" / "_index" / "relations.json"
+        index = json.loads(index_file.read_text())
+        assert company["id"] not in index["reverse"]
+
+    def test_soft_delete_preserves_index(self, tmp_workspace):
+        app = UpjackApp(namespace=NAMESPACE, entities=ENTITIES, root=tmp_workspace)
+        company = app.create_entity("company", {"name": "Acme"})
+        contact = app.create_entity(
+            "contact",
+            {
+                "first_name": "Alice",
+                "last_name": "A",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+
+        app.delete_entity("contact", contact["id"], hard=False)
+
+        index_file = tmp_workspace / NAMESPACE / "data" / "_index" / "relations.json"
+        index = json.loads(index_file.read_text())
+        # Soft delete doesn't remove from index — entity still exists
+        assert len(index["reverse"][company["id"]]) == 1
+
+    def test_no_index_created_without_relationships(self, tmp_workspace):
+        app = UpjackApp(namespace=NAMESPACE, entities=ENTITIES, root=tmp_workspace)
+        app.create_entity("contact", {"first_name": "Alice", "last_name": "A"})
+
+        index_file = tmp_workspace / NAMESPACE / "data" / "_index" / "relations.json"
+        assert not index_file.exists()
