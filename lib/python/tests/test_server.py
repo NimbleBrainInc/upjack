@@ -354,6 +354,7 @@ class TestCreateServer:
             "list_widgets",
             "search_widgets",
             "delete_widget",
+            "add_field",
         }
 
     def test_multiple_entity_types(self, tmp_path):
@@ -367,8 +368,8 @@ class TestCreateServer:
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         tools = _run(_list_tool_names(mcp))
 
-        # 6 tools per entity × 2 entities = 12
-        assert len(tools) == 12
+        # 6 tools per entity × 2 entities + 1 add_field = 13
+        assert len(tools) == 13
         assert "create_contact" in tools
         assert "search_deals" in tools
 
@@ -909,3 +910,264 @@ class TestMain:
                 main()
 
         assert (tmp_path / "workspace").exists()
+
+
+# ===========================================================================
+# Add field tool tests
+# ===========================================================================
+
+
+class TestAddFieldTool:
+    """Test the add_field tool for agent-initiated schema evolution."""
+
+    @pytest.fixture
+    def setup(self, tmp_path):
+        """Create manifest with a widget entity and return (mcp, tmp_path, schema_path)."""
+        schemas_dir = tmp_path / "schemas"
+        schemas_dir.mkdir()
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
+        }
+        schema_path = schemas_dir / "widget.schema.json"
+        schema_path.write_text(json.dumps(schema))
+
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "widget",
+                    "plural": "widgets",
+                    "prefix": "wg",
+                    "schema": "schemas/widget.schema.json",
+                }
+            ],
+        )
+        # Overwrite the default schema that _make_manifest created
+        schema_path.write_text(json.dumps(schema))
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        mcp = create_server(manifest_path, root=workspace)
+        return mcp, tmp_path, schema_path
+
+    def test_tool_is_registered(self, setup):
+        mcp, _, _ = setup
+        tools = _run(_list_tool_names(mcp))
+        assert "add_field" in tools
+
+    def test_adds_property_to_schema_file(self, setup):
+        mcp, _, schema_path = setup
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "score",
+                    "field_type": "integer",
+                    "default": 0,
+                },
+            )
+        )
+        assert result["success"] is True
+
+        updated = json.loads(schema_path.read_text())
+        assert "score" in updated["properties"]
+        assert updated["properties"]["score"]["default"] == 0
+
+    def test_adds_to_required_when_required_true(self, setup):
+        mcp, _, schema_path = setup
+        _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "score",
+                    "field_type": "integer",
+                    "default": 0,
+                    "required": True,
+                },
+            )
+        )
+
+        updated = json.loads(schema_path.read_text())
+        assert "score" in updated["required"]
+
+    def test_reload_works_new_entities_get_default(self, setup):
+        mcp, _, _ = setup
+        # Create entity before adding field
+        created = _run(_call_tool(mcp, "create_widget", {"data": {"name": "Test"}}))
+
+        # Add field with default
+        _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "priority",
+                    "field_type": "string",
+                    "default": "medium",
+                },
+            )
+        )
+
+        # Read entity — should get hydrated default from new schema
+        fetched = _run(_call_tool(mcp, "get_widget", {"entity_id": created["id"]}))
+        assert fetched["priority"] == "medium"
+
+    def test_rejects_invalid_field_type(self, setup):
+        mcp, _, _ = setup
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "bad",
+                    "field_type": "uuid",
+                    "default": "abc",
+                },
+            )
+        )
+        assert "error" in result
+        assert "Invalid field_type" in result["error"]
+
+    def test_rejects_type_incompatible_default(self, setup):
+        mcp, _, _ = setup
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "count",
+                    "field_type": "integer",
+                    "default": "not_a_number",
+                },
+            )
+        )
+        assert "error" in result
+        assert "not compatible" in result["error"]
+
+    def test_returns_error_if_field_exists_with_different_type(self, setup):
+        mcp, _, _ = setup
+        # name is a string in the schema
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "name",
+                    "field_type": "integer",
+                    "default": 0,
+                },
+            )
+        )
+        assert "error" in result
+        assert "already exists" in result["error"]
+
+    def test_returns_error_if_field_already_exists_same_type(self, setup):
+        mcp, _, _ = setup
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "name",
+                    "field_type": "string",
+                    "default": "",
+                },
+            )
+        )
+        assert "error" in result
+        assert "already exists" in result["error"]
+
+    def test_rejects_invalid_field_name(self, setup):
+        mcp, _, _ = setup
+        for bad_name in ["Has Spaces", "UPPERCASE", "123start", "special-char", ""]:
+            result = _run(
+                _call_tool(
+                    mcp,
+                    "add_field",
+                    {
+                        "entity_type": "widget",
+                        "field_name": bad_name,
+                        "field_type": "string",
+                        "default": "",
+                    },
+                )
+            )
+            assert "error" in result, f"Expected error for field_name={bad_name!r}"
+            assert "Invalid field_name" in result["error"]
+
+    def test_rejects_reserved_base_field_names(self, setup):
+        mcp, _, _ = setup
+        for reserved in ["id", "type", "version", "created_at", "updated_at", "status", "tags"]:
+            result = _run(
+                _call_tool(
+                    mcp,
+                    "add_field",
+                    {
+                        "entity_type": "widget",
+                        "field_name": reserved,
+                        "field_type": "string",
+                        "default": "",
+                    },
+                )
+            )
+            assert "error" in result, f"Expected error for reserved field {reserved!r}"
+            assert "reserved" in result["error"]
+
+    def test_rejects_path_traversal_in_schema(self, tmp_path):
+        """Schema path that escapes manifest_dir is rejected."""
+        schemas_dir = tmp_path / "schemas"
+        schemas_dir.mkdir()
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
+        schema_path = schemas_dir / "widget.schema.json"
+        schema_path.write_text(json.dumps(schema))
+
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "widget",
+                    "plural": "widgets",
+                    "prefix": "wg",
+                    "schema": "../../etc/widget.schema.json",
+                }
+            ],
+        )
+        schema_path.write_text(json.dumps(schema))
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        mcp = create_server(manifest_path, root=workspace)
+
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "score",
+                    "field_type": "integer",
+                    "default": 0,
+                },
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]

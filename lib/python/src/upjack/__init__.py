@@ -13,7 +13,13 @@ from upjack.entity import (
 )
 from upjack.ids import generate_id, parse_id, validate_id
 from upjack.paths import entity_dir, entity_path, schema_dir
-from upjack.schema import load_schema, resolve_entity_schema, validate_entity
+from upjack.schema import (
+    hydrate_defaults,
+    load_schema,
+    resolve_entity_schema,
+    validate_entity,
+    validate_schema_change,
+)
 from upjack.search import search_entities
 
 __all__ = [
@@ -27,9 +33,11 @@ __all__ = [
     "generate_id",
     "parse_id",
     "validate_id",
+    "hydrate_defaults",
     "load_schema",
     "validate_entity",
     "resolve_entity_schema",
+    "validate_schema_change",
     "search_entities",
     "entity_dir",
     "entity_path",

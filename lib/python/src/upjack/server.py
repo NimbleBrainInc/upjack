@@ -3,6 +3,7 @@
 import argparse
 import copy
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ except ImportError as e:
 from mcp.types import TextContent
 
 from upjack.app import UpjackApp
+from upjack.schema import load_schema, validate_schema_change
 
 # Base entity fields auto-managed by the framework — stripped from tool input schemas
 _BASE_ENTITY_KEYS = frozenset(
@@ -255,6 +257,134 @@ def _register_seed_tool(
         return {"loaded": loaded, "errors": errors}
 
 
+_ALLOWED_FIELD_TYPES = frozenset({"string", "integer", "number", "boolean", "array", "object"})
+
+_TYPE_VALIDATORS: dict[str, type | tuple[type, ...]] = {
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+_FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+_BASE_ENTITY_FIELD_NAMES = frozenset(
+    {
+        "id",
+        "type",
+        "version",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "status",
+        "tags",
+        "relationships",
+    }
+)
+
+
+def _register_add_field_tool(
+    mcp: FastMCP,
+    app: UpjackApp,
+    manifest_dir: Path,
+) -> None:
+    """Register the add_field tool for agent-initiated schema evolution."""
+
+    @mcp.tool(
+        name="add_field",
+        description=(
+            "Add a new field to an entity schema. Validates the change is safe, "
+            "writes the updated schema to disk, and reloads it."
+        ),
+    )
+    def add_field(
+        entity_type: str,
+        field_name: str,
+        field_type: str,
+        default: Any,
+        description: str = "",
+        required: bool = True,
+    ) -> dict[str, Any]:
+        if not _FIELD_NAME_RE.match(field_name):
+            return {"error": f"Invalid field_name '{field_name}'. Must match [a-z][a-z0-9_]*"}
+
+        if field_name in _BASE_ENTITY_FIELD_NAMES:
+            return {"error": f"Field '{field_name}' is a reserved base entity field"}
+
+        if field_type not in _ALLOWED_FIELD_TYPES:
+            return {
+                "error": f"Invalid field_type '{field_type}'. Allowed: {sorted(_ALLOWED_FIELD_TYPES)}"
+            }
+
+        expected = _TYPE_VALIDATORS[field_type]
+        if not isinstance(default, expected):
+            return {
+                "error": f"Default value {default!r} is not compatible with type '{field_type}'"
+            }
+
+        # Look up entity def to find schema path
+        if entity_type not in app._entities:
+            return {"error": f"Unknown entity type '{entity_type}'"}
+        entity_def = app._entities[entity_type]
+        schema_path = (manifest_dir / entity_def["schema"]).resolve()
+
+        if not schema_path.is_relative_to(manifest_dir.resolve()):
+            return {"error": "Schema path escapes the manifest directory"}
+
+        old_schema = load_schema(schema_path)
+
+        # Check if field already exists
+        old_props = old_schema.get("properties", {})
+        if field_name in old_props:
+            existing_type = old_props[field_name].get("type")
+            if existing_type and existing_type != field_type:
+                return {"error": f"Field '{field_name}' already exists with type '{existing_type}'"}
+            return {"error": f"Field '{field_name}' already exists"}
+
+        # Build new schema
+        new_schema = copy.deepcopy(old_schema)
+        if "properties" not in new_schema:
+            new_schema["properties"] = {}
+
+        prop_def: dict[str, Any] = {"type": field_type, "default": default}
+        if description:
+            prop_def["description"] = description
+        new_schema["properties"][field_name] = prop_def
+
+        if required:
+            req = new_schema.setdefault("required", [])
+            if field_name not in req:
+                req.append(field_name)
+
+        # Validate the change
+        diagnostics = validate_schema_change(old_schema, new_schema)
+        errors = [d for d in diagnostics if d["severity"] == "error"]
+        if errors:
+            return {"error": "Schema change validation failed", "diagnostics": errors}
+
+        warnings = [d for d in diagnostics if d["severity"] == "warning"]
+
+        # Write and reload
+        schema_path.write_text(json.dumps(new_schema, indent=2) + "\n")
+        app.reload_schema(entity_type)
+
+        result: dict[str, Any] = {
+            "success": True,
+            "entity_type": entity_type,
+            "field": {
+                "name": field_name,
+                "type": field_type,
+                "default": default,
+                "required": required,
+            },
+        }
+        if warnings:
+            result["warnings"] = warnings
+        return result
+
+
 def _register_resources(
     mcp: FastMCP,
     manifest_dir: Path,
@@ -349,6 +479,9 @@ def create_server(manifest_path: str | Path, root: str | Path = ".") -> FastMCP:
 
     # Register seed tool
     _register_seed_tool(mcp, app, manifest_dir, upjack)
+
+    # Register add_field tool
+    _register_add_field_tool(mcp, app, manifest_dir)
 
     # Register resources
     _register_resources(mcp, manifest_dir, upjack)

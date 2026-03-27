@@ -332,6 +332,79 @@ class TestAppIntegration:
         assert results[0]["first_name"] == "Sarah"
 
 
+class TestSearchHydration:
+    """Test that search_entities hydrates defaults from schema."""
+
+    SCHEMA = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "first_name": {"type": "string"},
+            "priority": {"type": "string", "default": "medium"},
+        },
+        "additionalProperties": True,
+    }
+
+    def test_search_hydrates_missing_field(self, tmp_workspace: Path):
+        """Entities missing a field with a default get it filled on search."""
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural=PLURAL,
+            prefix=PREFIX,
+            data={"first_name": "Sarah"},
+        )
+
+        results = search_entities(tmp_workspace, NAMESPACE, PLURAL, schema=self.SCHEMA)
+        assert len(results) == 1
+        assert results[0]["priority"] == "medium"
+
+    def test_search_does_not_overwrite_existing(self, tmp_workspace: Path):
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural=PLURAL,
+            prefix=PREFIX,
+            data={"first_name": "Sarah", "priority": "high"},
+        )
+
+        results = search_entities(tmp_workspace, NAMESPACE, PLURAL, schema=self.SCHEMA)
+        assert results[0]["priority"] == "high"
+
+    def test_search_filter_on_hydrated_field(self, tmp_workspace: Path):
+        """Filters should work against hydrated default values."""
+        # Entity without priority — will be hydrated to "medium"
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural=PLURAL,
+            prefix=PREFIX,
+            data={"first_name": "Alice"},
+        )
+        # Entity with explicit priority
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural=PLURAL,
+            prefix=PREFIX,
+            data={"first_name": "Bob", "priority": "high"},
+        )
+
+        results = search_entities(
+            tmp_workspace,
+            NAMESPACE,
+            PLURAL,
+            filter={"priority": "medium"},
+            schema=self.SCHEMA,
+        )
+        assert len(results) == 1
+        assert results[0]["first_name"] == "Alice"
+
+
 class TestCorruptJsonResilience:
     """Verify that corrupt JSON files are skipped during search."""
 

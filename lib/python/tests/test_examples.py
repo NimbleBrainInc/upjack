@@ -776,3 +776,197 @@ class TestTodoServer:
 
     def test_server_name_is_todo_list(self, mcp):
         assert mcp.name == "Todo List"
+
+
+# ===========================================================================
+# Schema Evolution E2E Tests — add_field + hydrate-on-read with real schemas
+# ===========================================================================
+
+
+class TestSchemaEvolutionCrm:
+    """Test add_field and hydrate-on-read against real CRM schemas."""
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        # Copy schemas so add_field can write to them without modifying the repo
+        import shutil
+
+        app_dir = tmp_path / "app"
+        shutil.copytree(CRM_DIR, app_dir)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(app_dir / "manifest.json", root=workspace)
+
+    def test_add_field_registered(self, mcp):
+        tools = _run(_list_tool_names(mcp))
+        assert "add_field" in tools
+
+    def test_add_field_to_contact(self, mcp):
+        """Add a field to the real CRM contact schema and verify it works."""
+        # Create a contact before adding the field
+        contact = _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {"data": {"first_name": "Alice", "last_name": "Chen"}},
+            )
+        )
+
+        # Add a new field
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "contact",
+                    "field_name": "engagement_score",
+                    "field_type": "integer",
+                    "default": 0,
+                    "description": "Engagement score based on interactions",
+                },
+            )
+        )
+        assert result["success"] is True
+
+        # Old contact should get the default via hydrate-on-read
+        fetched = _run(_call_tool(mcp, "get_contact", {"entity_id": contact["id"]}))
+        assert fetched["engagement_score"] == 0
+        assert fetched["first_name"] == "Alice"
+
+    def test_hydrate_on_read_list(self, mcp):
+        """List contacts hydrates defaults after schema evolution."""
+        _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {"data": {"first_name": "Bob", "last_name": "Smith"}},
+            )
+        )
+
+        _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "contact",
+                    "field_name": "priority_tier",
+                    "field_type": "string",
+                    "default": "standard",
+                },
+            )
+        )
+
+        contacts = _run(_call_tool(mcp, "list_contacts", {}))
+        assert len(contacts) == 1
+        assert contacts[0]["priority_tier"] == "standard"
+
+    def test_hydrate_on_read_search(self, mcp):
+        """Search contacts hydrates defaults after schema evolution."""
+        _run(
+            _call_tool(
+                mcp,
+                "create_contact",
+                {"data": {"first_name": "Charlie", "last_name": "Davis"}},
+            )
+        )
+
+        _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "contact",
+                    "field_name": "is_vip",
+                    "field_type": "boolean",
+                    "default": False,
+                },
+            )
+        )
+
+        results = _run(_call_tool(mcp, "search_contacts", {"query": "Charlie"}))
+        assert len(results) == 1
+        assert results[0]["is_vip"] is False
+
+
+class TestSchemaEvolutionTodo:
+    """Test add_field against real Todo schemas."""
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        import shutil
+
+        app_dir = tmp_path / "app"
+        shutil.copytree(TODO_DIR, app_dir)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(app_dir / "manifest.json", root=workspace)
+
+    def test_add_field_to_task(self, mcp):
+        """Add a field to the real Todo task schema (allOf + $ref)."""
+        task = _run(
+            _call_tool(
+                mcp,
+                "create_task",
+                {"data": {"title": "Write tests"}},
+            )
+        )
+
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "task",
+                    "field_name": "story_points",
+                    "field_type": "integer",
+                    "default": 1,
+                },
+            )
+        )
+        assert result["success"] is True
+
+        fetched = _run(_call_tool(mcp, "get_task", {"entity_id": task["id"]}))
+        assert fetched["story_points"] == 1
+        assert fetched["title"] == "Write tests"
+
+
+class TestSchemaEvolutionResearch:
+    """Test add_field against real Research Assistant schemas."""
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        import shutil
+
+        app_dir = tmp_path / "app"
+        shutil.copytree(RESEARCH_DIR, app_dir)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(app_dir / "manifest.json", root=workspace)
+
+    def test_add_field_to_topic(self, mcp):
+        """Add a field to the real Research topic schema (allOf + $ref)."""
+        topic = _run(
+            _call_tool(
+                mcp,
+                "create_topic",
+                {"data": {"title": "AI Safety"}},
+            )
+        )
+
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "topic",
+                    "field_name": "confidence_level",
+                    "field_type": "string",
+                    "default": "low",
+                },
+            )
+        )
+        assert result["success"] is True
+
+        fetched = _run(_call_tool(mcp, "get_topic", {"entity_id": topic["id"]}))
+        assert fetched["confidence_level"] == "low"
+        assert fetched["title"] == "AI Safety"
