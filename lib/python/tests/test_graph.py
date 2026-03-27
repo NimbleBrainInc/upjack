@@ -109,6 +109,20 @@ class TestQueryByRelationship:
         assert len(results) == 1
         assert results[0]["first_name"] == "Alice"
 
+    def test_dict_filter_raises(self, app):
+        company = app.create_entity("company", {"name": "Acme"})
+        app.create_entity(
+            "contact",
+            {
+                "first_name": "Alice",
+                "relationships": [{"rel": "works_at", "target": company["id"]}],
+            },
+        )
+        with pytest.raises(ValueError, match="Operator filters"):
+            app.query_by_relationship(
+                "contact", "works_at", company["id"], filter={"score": {"$gt": 5}}
+            )
+
     def test_returns_empty_for_no_matches(self, app):
         results = app.query_by_relationship("contact", "works_at", "co_NONEXISTENT")
         assert results == []

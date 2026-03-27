@@ -525,17 +525,17 @@ class UpjackApp:
                 except (ValueError, FileNotFoundError):
                     continue
 
-        entity["_related"] = related
-        return entity
+        return {**entity, "_related": related}
 
     @staticmethod
     def _matches_filter(entity: dict[str, Any], filter: dict[str, Any]) -> bool:
         """Check if an entity matches a structured filter (simple equality only)."""
         for key, value in filter.items():
             if isinstance(value, dict):
-                # Comparison operators — delegate to search module patterns
-                # For simplicity, support basic equality here
-                continue
+                raise ValueError(
+                    f"Operator filters (e.g., {value}) are not supported in "
+                    f"query_by_relationship. Use simple equality filters."
+                )
             if entity.get(key) != value:
                 return False
         return True
