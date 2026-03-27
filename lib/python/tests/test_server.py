@@ -1073,3 +1073,101 @@ class TestAddFieldTool:
         )
         assert "error" in result
         assert "already exists" in result["error"]
+
+    def test_returns_error_if_field_already_exists_same_type(self, setup):
+        mcp, _, _ = setup
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "name",
+                    "field_type": "string",
+                    "default": "",
+                },
+            )
+        )
+        assert "error" in result
+        assert "already exists" in result["error"]
+
+    def test_rejects_invalid_field_name(self, setup):
+        mcp, _, _ = setup
+        for bad_name in ["Has Spaces", "UPPERCASE", "123start", "special-char", ""]:
+            result = _run(
+                _call_tool(
+                    mcp,
+                    "add_field",
+                    {
+                        "entity_type": "widget",
+                        "field_name": bad_name,
+                        "field_type": "string",
+                        "default": "",
+                    },
+                )
+            )
+            assert "error" in result, f"Expected error for field_name={bad_name!r}"
+            assert "Invalid field_name" in result["error"]
+
+    def test_rejects_reserved_base_field_names(self, setup):
+        mcp, _, _ = setup
+        for reserved in ["id", "type", "version", "created_at", "updated_at", "status", "tags"]:
+            result = _run(
+                _call_tool(
+                    mcp,
+                    "add_field",
+                    {
+                        "entity_type": "widget",
+                        "field_name": reserved,
+                        "field_type": "string",
+                        "default": "",
+                    },
+                )
+            )
+            assert "error" in result, f"Expected error for reserved field {reserved!r}"
+            assert "reserved" in result["error"]
+
+    def test_rejects_path_traversal_in_schema(self, tmp_path):
+        """Schema path that escapes manifest_dir is rejected."""
+        schemas_dir = tmp_path / "schemas"
+        schemas_dir.mkdir()
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
+        schema_path = schemas_dir / "widget.schema.json"
+        schema_path.write_text(json.dumps(schema))
+
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "widget",
+                    "plural": "widgets",
+                    "prefix": "wg",
+                    "schema": "../../etc/widget.schema.json",
+                }
+            ],
+        )
+        schema_path.write_text(json.dumps(schema))
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        mcp = create_server(manifest_path, root=workspace)
+
+        result = _run(
+            _call_tool(
+                mcp,
+                "add_field",
+                {
+                    "entity_type": "widget",
+                    "field_name": "score",
+                    "field_type": "integer",
+                    "default": 0,
+                },
+            )
+        )
+        assert "error" in result
+        assert "escapes" in result["error"]

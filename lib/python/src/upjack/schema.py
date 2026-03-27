@@ -1,5 +1,6 @@
 """JSON Schema loading and validation for upjack entities."""
 
+import copy
 import json
 import logging
 from pathlib import Path
@@ -100,7 +101,7 @@ def _apply_property_defaults(data: dict[str, Any], schema: dict[str, Any]) -> No
     props = schema.get("properties", {})
     for field_name, field_schema in props.items():
         if field_name not in data and "default" in field_schema:
-            data[field_name] = field_schema["default"]
+            data[field_name] = copy.deepcopy(field_schema["default"])
 
 
 # Map $ref URIs to resolved schemas for hydration

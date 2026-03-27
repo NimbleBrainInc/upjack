@@ -151,6 +151,30 @@ class TestHydrateDefaults:
         result = hydrate_defaults(data, schema)
         assert result["channels"] == ["email"]
 
+    def test_mutable_defaults_are_isolated(self):
+        """Hydrating two entities must not share the same list/dict object."""
+        schema = {
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": [],
+                },
+                "config": {
+                    "type": "object",
+                    "default": {"retries": 3},
+                },
+            }
+        }
+        a = hydrate_defaults({}, schema)
+        b = hydrate_defaults({}, schema)
+
+        a["tags"].append("mutated")
+        a["config"]["retries"] = 99
+
+        assert b["tags"] == []
+        assert b["config"]["retries"] == 3
+
 
 class TestResolveEntitySchema:
     def test_creates_allof_composition(self):
