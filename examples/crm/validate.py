@@ -78,6 +78,46 @@ def main() -> int:
     assert len(deal["relationships"]) == 2
     print(f"  Created: {deal['id']}")
 
+    # Validate graph traversal — get_related forward
+    print("\nValidating graph traversal...")
+    print("  get_related (forward)...")
+    related_fwd = app.get_related(deal["id"], direction="forward")
+    related_fwd_ids = {r["id"] for r in related_fwd}
+    if contact["id"] not in related_fwd_ids:
+        errors.append(f"get_related forward missing contact {contact['id']}")
+    if company["id"] not in related_fwd_ids:
+        errors.append(f"get_related forward missing company {company['id']}")
+    print(f"    Found {len(related_fwd)} related entities")
+
+    # Validate graph traversal — query_by_relationship
+    print("  query_by_relationship (deal->company)...")
+    deals_for_company = app.query_by_relationship("deal", "company", company["id"])
+    deals_for_company_ids = {d["id"] for d in deals_for_company}
+    if deal["id"] not in deals_for_company_ids:
+        errors.append(f"query_by_relationship did not find deal {deal['id']} for company {company['id']}")
+    print(f"    Found {len(deals_for_company)} deal(s) for company")
+
+    # Validate graph traversal — get_composite
+    print("  get_composite (deal)...")
+    composite = app.get_composite("deal", deal["id"])
+    composite_related = composite.get("_related", {})
+    composite_contact_ids = {r["id"] for r in composite_related.get("primary_contact", [])}
+    composite_company_ids = {r["id"] for r in composite_related.get("company", [])}
+    if contact["id"] not in composite_contact_ids:
+        errors.append(f"get_composite _related missing contact under primary_contact")
+    if company["id"] not in composite_company_ids:
+        errors.append(f"get_composite _related missing company under company")
+    print(f"    _related keys: {sorted(composite_related.keys())}")
+
+    # Validate rebuild_index
+    print("  rebuild_index...")
+    from upjack.relations import rebuild_index
+    index = rebuild_index(app.root, app.namespace, app._entity_defs_list())
+    index_entry_count = sum(len(v) for v in index.values())
+    if index_entry_count < 2:
+        errors.append(f"rebuild_index returned only {index_entry_count} entries, expected at least 2")
+    print(f"    Index entries: {index_entry_count}")
+
     # Create a pipeline (singleton)
     print("Creating pipeline...")
     pipeline_data = json.loads((EXAMPLE_DIR / "seed" / "default-pipeline.json").read_text())

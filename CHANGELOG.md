@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.0] - 2026-03-26
+
+### Added
+- Schema evolution: hydrate-on-read migration, `validate_schema_change()` guard, `add_field` MCP tool, required-without-default warning
+- Relationship indexing: write-time reverse index at `_index/relations.json`, auto-rebuild from entity files, atomic writes
+- Graph traversal methods on UpjackApp: `query_by_relationship`, `get_related`, `get_composite`
+- Activity tracking: opt-in via `"activities": true` in manifest, `log_activity` and `get_activities` methods
+- Per-entity MCP tools: `query_{plural}_by_relationship`, `get_related_{name}`, `get_{name}_composite`
+- Global MCP tools: `rebuild_index`, `log_activity`, `get_activities` (when activities enabled)
+- CRUD hooks: `on_relationships_changed` callback for automatic index maintenance
+
 ## [0.1.0] - 2026-02-24
 
 ### Added

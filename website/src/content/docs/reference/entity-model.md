@@ -1,6 +1,6 @@
 ---
 title: "Entity Model"
-description: "Base entity schema, type-prefixed IDs, storage format, schema layering, and lifecycle states."
+description: "Base entity schema, type-prefixed IDs, storage format, schema layering, lifecycle states, relationship indexing, and activity tracking."
 draft: false
 ---
 
@@ -311,6 +311,138 @@ active  -->  archived  -->  deleted
 - **Soft delete** is the default. `entity_delete` sets `status: "deleted"` and updates `updated_at`.
 - **Hard delete** removes the file from the workspace entirely. Only used with explicit `hard: true`.
 - **Restore** changes status from `archived` or `deleted` back to `active` via `entity_update`.
+
+## Relationship Indexing
+
+Relationships defined in the `relationships` array are automatically indexed at write time. When an entity is created, updated, or deleted, the framework maintains a reverse index at:
+
+```
+{namespace}/data/_index/relations.json
+```
+
+The reverse index maps `(target_id, rel)` back to the source entity, enabling efficient lookups in both directions. For example, if lead `ld_01HZ...5X` has `{"rel": "works_at", "target": "co_01HZ...5Y"}`, the index records that `co_01HZ...5Y` has an inbound `works_at` edge from `ld_01HZ...5X`.
+
+### Index Behavior
+
+- **Automatic** — no configuration needed. Any entity with a `relationships` array participates.
+- **Write-time updated** — the index is updated atomically on every `create_entity`, `update_entity`, and `delete_entity` call.
+- **Self-healing** — if the index file is missing or corrupt, it is rebuilt from entity files on the next read. You can also force a rebuild with the `rebuild_index()` method or the `rebuild_index` MCP tool.
+
+## Querying Relationships
+
+Three methods on `UpjackApp` expose the relationship graph. Each is also registered as an MCP tool per entity type.
+
+### `query_by_relationship`
+
+Find entities of a given type that have a specific relationship to a target.
+
+```python
+# Find all leads that work at company co_01HZ...5Y
+leads = app.query_by_relationship("lead", "works_at", "co_01HZ...5Y")
+
+# With additional field filter and limit
+leads = app.query_by_relationship(
+    "lead", "works_at", "co_01HZ...5Y",
+    filter={"stage": "qualified"},
+    limit=10,
+)
+```
+
+Uses the reverse index for fast lookup without scanning entity files.
+
+### `get_related`
+
+Follow relationship edges from an entity, forward or reverse, and return resolved entities.
+
+```python
+# Forward: get entities this lead points to
+related = app.get_related("ld_01HZ...5X")
+
+# Forward, specific relationship
+companies = app.get_related("ld_01HZ...5X", rel="works_at")
+
+# Reverse: get entities that point to this company
+inbound = app.get_related("co_01HZ...5Y", direction="reverse")
+
+# Both directions
+all_related = app.get_related("ld_01HZ...5X", direction="both")
+```
+
+### `get_composite`
+
+Load an entity with all its related entities in a single call. Returns the entity with a `_related` key containing forward and reverse relationships grouped by relationship type.
+
+```python
+composite = app.get_composite("lead", "ld_01HZ...5X")
+```
+
+```json
+{
+  "id": "ld_01HZ...5X",
+  "type": "lead",
+  "name": "Alice Chen",
+  "_related": {
+    "works_at": [
+      { "id": "co_01HZ...5Y", "type": "company", "name": "TechCorp" }
+    ],
+    "~works_at": [
+      { "id": "dl_01HZ...7Z", "type": "deal", "name": "TechCorp Expansion" }
+    ]
+  }
+}
+```
+
+#### The `~` Prefix Convention
+
+In composite results, forward relationships use the bare relationship name (`works_at`), while reverse relationships are prefixed with `~` (`~works_at`). This makes direction unambiguous when both forward and reverse edges share the same relationship type. The `~` prefix is only a display convention in `get_composite` results — it is not stored in entity data or the index.
+
+The optional `depth` parameter controls how many hops to traverse (default: 1).
+
+## Activity Tracking
+
+Activity tracking is an opt-in feature that provides a built-in audit log for entity interactions.
+
+### Enabling
+
+Add `"activities": true` to the `ai.nimblebrain/upjack` extension in your manifest:
+
+```json
+{
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "namespace": "apps/crm",
+      "entities": { ... },
+      "activities": true
+    }
+  }
+}
+```
+
+### What It Provides
+
+When enabled, the framework registers an `activity` entity type automatically (prefix: `act`, plural: `activities`) with a built-in schema:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | string | Yes | What happened (e.g., `"called"`, `"emailed"`, `"stage_changed"`). |
+| `detail` | object | No | Arbitrary metadata about the action. |
+
+Activities are linked to their subject via a `subject` relationship, so they participate in the relationship index like any other entity.
+
+### Logging and Querying Activities
+
+```python
+# Log an activity
+app.log_activity("ld_01HZ...5X", "called", detail={"duration": 300})
+
+# Get activities for a subject
+activities = app.get_activities("ld_01HZ...5X")
+
+# Filter by action
+calls = app.get_activities("ld_01HZ...5X", action="called", limit=10)
+```
+
+Both `log_activity` and `get_activities` are also registered as MCP tools when activities are enabled.
 
 ## Storage
 
