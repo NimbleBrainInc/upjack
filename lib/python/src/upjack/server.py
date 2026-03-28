@@ -308,11 +308,12 @@ def _register_seed_tool(
                     errors.append(f"{file.name}: missing 'type' field")
                     continue
 
-                # Extract app data (strip base fields that create_entity generates)
+                # Extract app data (strip base fields that create_entity generates).
+                # Keep "id" so seed data with stable IDs can be used for cross-references.
                 data = {
                     k: v
                     for k, v in item.items()
-                    if k not in {"id", "type", "created_at", "updated_at", "created_by"}
+                    if k not in {"type", "created_at", "updated_at", "created_by"}
                 }
 
                 try:

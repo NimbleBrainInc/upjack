@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from upjack.ids import generate_id
+from upjack.ids import generate_id, validate_id
 from upjack.paths import entity_dir, entity_path
 from upjack.schema import hydrate_defaults, validate_entity
 
@@ -110,8 +110,22 @@ def create_entity(
         The complete entity dict (base fields + app data).
     """
     now = _now_iso()
-    entity_id = generate_id(prefix)
     data = dict(data)  # avoid mutating caller's dict
+
+    # Resolve entity ID: use provided ID if valid for this prefix, otherwise generate
+    provided_id = data.pop("id", None)
+    if provided_id and validate_id(provided_id) and provided_id.startswith(f"{prefix}_"):
+        entity_id = provided_id
+    else:
+        entity_id = generate_id(prefix)
+
+    # Strip type — always set from entity_type parameter
+    data.pop("type", None)
+
+    # Reject duplicates
+    path = entity_path(root, namespace, plural, entity_id)
+    if path.exists():
+        raise ValueError(f"Entity already exists: {entity_id}")
 
     record: dict[str, Any] = {
         "id": entity_id,
@@ -131,7 +145,6 @@ def create_entity(
     if schema is not None:
         validate_entity(record, schema)
 
-    path = entity_path(root, namespace, plural, entity_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2) + "\n")
 

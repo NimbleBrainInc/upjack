@@ -101,6 +101,106 @@ class TestCreateEntity:
         assert result["first_name"] == "Sarah"
 
 
+class TestCreateEntityIdHandling:
+    """Test ID resolution in create_entity — provided vs generated."""
+
+    def test_respects_valid_provided_id(self, tmp_workspace):
+        """A valid ID matching the prefix should be used as-is."""
+        from upjack.ids import generate_id
+
+        provided = generate_id("ct")
+        result = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"id": provided, "first_name": "Alice", "last_name": "Chen"},
+        )
+        assert result["id"] == provided
+        # File on disk should match the provided ID
+        path = tmp_workspace / NAMESPACE / "data" / "contacts" / f"{provided}.json"
+        assert path.exists()
+
+    def test_provided_id_retrievable_by_get(self, tmp_workspace):
+        """Entity created with a provided ID must be retrievable by that ID."""
+        from upjack.ids import generate_id
+
+        provided = generate_id("ct")
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"id": provided, "first_name": "Bob", "last_name": "Smith"},
+        )
+        fetched = get_entity(tmp_workspace, NAMESPACE, "contacts", provided)
+        assert fetched["id"] == provided
+        assert fetched["first_name"] == "Bob"
+
+    def test_ignores_id_with_wrong_prefix(self, tmp_workspace):
+        """An ID with the wrong prefix should be ignored — new ULID generated."""
+        result = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"id": "dl_01KMRSCQ0QTWTXDG4EN1VP1GW4", "first_name": "Eve", "last_name": "X"},
+        )
+        assert result["id"].startswith("ct_")
+        assert result["id"] != "dl_01KMRSCQ0QTWTXDG4EN1VP1GW4"
+
+    def test_ignores_invalid_id_format(self, tmp_workspace):
+        """A malformed ID should be ignored — new ULID generated."""
+        result = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"id": "not-a-valid-id", "first_name": "Mal", "last_name": "Formed"},
+        )
+        assert result["id"].startswith("ct_")
+        assert validate_id(result["id"])
+
+    def test_rejects_duplicate_id(self, tmp_workspace):
+        """Creating two entities with the same ID should raise ValueError."""
+        from upjack.ids import generate_id
+
+        provided = generate_id("ct")
+        create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"id": provided, "first_name": "First", "last_name": "One"},
+        )
+        with pytest.raises(ValueError, match="already exists"):
+            create_entity(
+                root=tmp_workspace,
+                namespace=NAMESPACE,
+                entity_type="contact",
+                plural="contacts",
+                prefix="ct",
+                data={"id": provided, "first_name": "Second", "last_name": "One"},
+            )
+
+    def test_provided_type_does_not_override(self, tmp_workspace):
+        """A 'type' in data should not leak into the record — entity_type param wins."""
+        result = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="contact",
+            plural="contacts",
+            prefix="ct",
+            data={"type": "wrong_type", "first_name": "Type", "last_name": "Test"},
+        )
+        assert result["type"] == "contact"
+
+
 class TestUpdateEntity:
     def test_updates_entity(self, tmp_workspace):
         created = create_entity(
