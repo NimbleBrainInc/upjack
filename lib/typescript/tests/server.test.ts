@@ -613,3 +613,59 @@ describe("resources", () => {
     await client.close();
   });
 });
+
+describe("tool listing filter", () => {
+  it("tools array filters listed tools", async () => {
+    const manifestPath = makeManifest(tmpDir, [
+      { name: "session", plural: "sessions", prefix: "ss", tools: ["get", "search"] },
+    ]);
+    const client = await connectClient(manifestPath, workspace);
+    const tools = await client.listTools();
+    const names = new Set(tools.tools.map((t) => t.name));
+
+    expect(names).toEqual(new Set(["get_session", "search_sessions"]));
+
+    // Hidden tools are still callable
+    const result = await client.callTool({ name: "create_session", arguments: { data: { name: "Test" } } });
+    expect(result.isError).toBeFalsy();
+
+    await client.close();
+  });
+
+  it("no tools array lists all tools", async () => {
+    const manifestPath = makeManifest(tmpDir, [
+      { name: "widget", plural: "widgets", prefix: "wg" },
+    ]);
+    const client = await connectClient(manifestPath, workspace);
+    const tools = await client.listTools();
+    const names = new Set(tools.tools.map((t) => t.name));
+
+    expect(names).toEqual(
+      new Set([
+        "create_widget", "get_widget", "update_widget",
+        "list_widgets", "search_widgets", "delete_widget",
+      ]),
+    );
+    await client.close();
+  });
+
+  it("mixed tools arrays across entities", async () => {
+    const manifestPath = makeManifest(tmpDir, [
+      { name: "session", plural: "sessions", prefix: "ss", tools: ["get"] },
+      { name: "bookmark", plural: "bookmarks", prefix: "bk" },
+    ]);
+    const client = await connectClient(manifestPath, workspace);
+    const tools = await client.listTools();
+    const names = new Set(tools.tools.map((t) => t.name));
+
+    // session: only get
+    expect(names.has("get_session")).toBe(true);
+    expect(names.has("create_session")).toBe(false);
+
+    // bookmark: all 6
+    expect(names.has("create_bookmark")).toBe(true);
+    expect(names.has("delete_bookmark")).toBe(true);
+
+    await client.close();
+  });
+});

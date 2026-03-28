@@ -124,6 +124,44 @@ def _make_entity_tool(
     )
 
 
+# ---------------------------------------------------------------------------
+# Tool listing filter
+# ---------------------------------------------------------------------------
+
+_CATEGORY_TO_TOOL: dict[str, str] = {
+    "create": "create_{name}",
+    "get": "get_{name}",
+    "update": "update_{name}",
+    "list": "list_{plural}",
+    "search": "search_{plural}",
+    "delete": "delete_{name}",
+    "query_by_relationship": "query_{plural}_by_relationship",
+    "get_related": "get_related_{name}",
+    "get_composite": "get_{name}_composite",
+}
+
+_ALL_UTILITY_TOOLS = frozenset({"seed_data", "add_field", "rebuild_index"})
+
+
+def _resolve_listed_tools(
+    name: str,
+    plural: str,
+    tools: list[str] | None,
+) -> set[str]:
+    """Map tool category names to actual tool names for an entity."""
+    categories = _CATEGORY_TO_TOOL if tools is None else {
+        k: v for k, v in _CATEGORY_TO_TOOL.items() if k in tools
+    }
+    return {tmpl.format(name=name, plural=plural) for tmpl in categories.values()}
+
+
+def _resolve_utility_tools(utility_tools: list[str] | None) -> set[str]:
+    """Resolve which utility tools should be listed."""
+    if utility_tools is None:
+        return set(_ALL_UTILITY_TOOLS)
+    return set(utility_tools) & _ALL_UTILITY_TOOLS
+
+
 def _register_entity_tools(
     mcp: FastMCP,
     app: UpjackApp,
@@ -772,6 +810,30 @@ def create_server(manifest_path: str | Path, root: str | Path | None = None) -> 
 
     # Register resources
     _register_resources(mcp, manifest_dir, upjack)
+
+    # Apply tool listing filter if any entity specifies a tools array
+    has_filter = any(
+        e.get("tools") is not None for e in upjack.get("entities", [])
+    ) or upjack.get("utility_tools") is not None
+
+    if has_filter:
+        listed_tools: set[str] = set()
+        for entity_def in upjack.get("entities", []):
+            ename = entity_def["name"]
+            eplural = entity_def.get("plural", ename + "s")
+            listed_tools.update(_resolve_listed_tools(ename, eplural, entity_def.get("tools")))
+        if upjack.get("activities"):
+            listed_tools.update(_resolve_listed_tools("activity", "activities", None))
+            listed_tools.update({"log_activity", "get_activities"})
+        listed_tools.update(_resolve_utility_tools(upjack.get("utility_tools")))
+
+        _original_list_tools = mcp._list_tools
+
+        async def _filtered_list_tools():
+            all_tools = await _original_list_tools()
+            return [t for t in all_tools if t.name in listed_tools]
+
+        mcp._list_tools = _filtered_list_tools  # type: ignore[assignment]
 
     return mcp
 

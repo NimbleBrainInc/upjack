@@ -44,6 +44,8 @@ Opt-in via `"activities": true` in manifest `_meta["ai.nimblebrain/upjack"]` ext
 
 ## MCP Tools (auto-registered)
 
+Per-entity `tools` array controls which tool categories appear in `tools/list`. All tools remain callable via `tools/call`. Default (omitted) = all listed. Categories: `create`, `get`, `update`, `list`, `search`, `delete`, `query_by_relationship`, `get_related`, `get_composite`. Utility tools controlled via `utility_tools` on the upjack extension.
+
 Per entity type (in addition to existing CRUD tools):
 
 - `query_{plural}_by_relationship(rel, target_id, filter?, limit?)`

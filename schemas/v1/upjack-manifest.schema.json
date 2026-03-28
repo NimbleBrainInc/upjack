@@ -125,6 +125,14 @@
         }
       },
       "required": ["data"]
+    },
+    "utility_tools": {
+      "type": "array",
+      "description": "Utility tools to list in tools/list. Omit to list all. Options: seed_data, add_field, rebuild_index.",
+      "items": {
+        "type": "string",
+        "enum": ["seed_data", "add_field", "rebuild_index"]
+      }
     }
   },
   "required": ["upjack_version", "namespace", "entities"],
@@ -165,6 +173,14 @@
           "type": "boolean",
           "description": "Whether only one record of this type can exist",
           "default": false
+        },
+        "tools": {
+          "type": "array",
+          "description": "Tool categories to list in tools/list. Omit to list all. All tools remain callable via tools/call regardless.",
+          "items": {
+            "type": "string",
+            "enum": ["create", "get", "update", "list", "search", "delete", "query_by_relationship", "get_related", "get_composite"]
+          }
         }
       },
       "required": ["name", "schema", "prefix"]

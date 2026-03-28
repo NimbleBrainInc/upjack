@@ -213,7 +213,8 @@ Template — adapt properties per entity:
           "plural": "{entity_names}",
           "schema": "schemas/{entity_name}.schema.json",
           "prefix": "{xx}",
-          "index": true
+          "index": true,
+          "tools": ["create", "get", "update", "list", "search", "delete"]
         }
       ],
       "skills": [

@@ -122,6 +122,7 @@ Every Upjack app must define at least one entity. Each entity definition describ
 | `storage` | string | No | `data/{plural}/` | Relative storage path within the namespace. |
 | `index` | boolean | No | `true` | Whether to index this entity for full-text search. |
 | `singleton` | boolean | No | `false` | Whether only one instance of this entity can exist. |
+| `tools` | string[] | No | all | Tool categories to list in `tools/list`. All tools remain callable. Options: `create`, `get`, `update`, `list`, `search`, `delete`, `query_by_relationship`, `get_related`, `get_composite`. |
 
 ```json
 {
@@ -131,7 +132,8 @@ Every Upjack app must define at least one entity. Each entity definition describ
   "prefix": "ld",
   "storage": "data/leads/",
   "index": true,
-  "singleton": false
+  "singleton": false,
+  "tools": ["create", "get", "update", "list", "search", "delete"]
 }
 ```
 

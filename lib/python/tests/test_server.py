@@ -1011,14 +1011,14 @@ class TestMain:
                 {"name": "item", "plural": "items", "prefix": "it"},
             ],
         )
-        # Change cwd so ./workspace resolves to tmp_path/workspace
+        # Change cwd so .upjack resolves to tmp_path/.upjack
         monkeypatch.chdir(tmp_path)
 
         with mock.patch("sys.argv", ["upjack-server", str(manifest_path)]):
             with mock.patch("upjack.server.FastMCP.run"):
                 main()
 
-        assert (tmp_path / "workspace").exists()
+        assert (tmp_path / ".upjack").exists()
 
 
 # ===========================================================================
@@ -1594,3 +1594,59 @@ class TestActivityTools:
         )
         assert len(activities) == 1
         assert activities[0]["action"] == "email_sent"
+
+
+class TestToolListingFilter:
+    """Tests for entity-level tools array filtering."""
+
+    def test_tools_array_filters_listed_tools(self, tmp_path):
+        """Entity with tools array only lists specified categories."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "session", "plural": "sessions", "prefix": "ss", "tools": ["get", "search"]}],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        listed = _run(_list_tool_names(mcp))
+        assert "get_session" in listed
+        assert "search_sessions" in listed
+        assert "create_session" not in listed
+        assert "delete_session" not in listed
+
+        # Hidden tools are still callable
+        result = _run(_call_tool(mcp, "create_session", {"data": {"name": "Test"}}))
+        assert "id" in result
+
+    def test_tools_array_absent_lists_all(self, tmp_path):
+        """Entity without tools key lists all tool categories."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "widget", "plural": "widgets", "prefix": "wg"}],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        listed = _run(_list_tool_names(mcp))
+        for expected in [
+            "create_widget", "get_widget", "update_widget",
+            "list_widgets", "search_widgets", "delete_widget",
+        ]:
+            assert expected in listed
+
+    def test_mixed_tools_arrays(self, tmp_path):
+        """Mixed entities: one filtered, one unfiltered."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [
+                {"name": "session", "plural": "sessions", "prefix": "ss", "tools": ["get"]},
+                {"name": "bookmark", "plural": "bookmarks", "prefix": "bk"},
+            ],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        listed = _run(_list_tool_names(mcp))
+        # session: only get
+        assert "get_session" in listed
+        assert "create_session" not in listed
+        # bookmark: all CRUD
+        assert "create_bookmark" in listed
+        assert "delete_bookmark" in listed

@@ -67,6 +67,35 @@ function prepareEntitySchema(schema: JsonSchema, opts?: { forUpdate?: boolean })
 }
 
 // ---------------------------------------------------------------------------
+// Tool listing filter
+// ---------------------------------------------------------------------------
+
+const CATEGORY_TO_TOOL: Record<string, string> = {
+  create: "create_{name}",
+  get: "get_{name}",
+  update: "update_{name}",
+  list: "list_{plural}",
+  search: "search_{plural}",
+  delete: "delete_{name}",
+};
+
+function resolveListedTools(
+  name: string,
+  plural: string | undefined,
+  categories: string[],
+): Set<string> {
+  const p = plural ?? `${name}s`;
+  const result = new Set<string>();
+  for (const cat of categories) {
+    const tmpl = CATEGORY_TO_TOOL[cat];
+    if (tmpl) {
+      result.add(tmpl.replace("{name}", name).replace("{plural}", p));
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Tool definition builders
 // ---------------------------------------------------------------------------
 
@@ -291,15 +320,22 @@ export function createServer(manifestPath: string, root?: string): Server {
 
   const app = UpjackApp.fromManifest(manifestPath, root);
 
-  // Collect all tool definitions and handlers
-  const allDefinitions: ToolDefinition[] = [];
+  // Collect tool definitions (listed vs all) and handlers
+  const listedDefinitions: ToolDefinition[] = [];
   const allHandlers: Record<string, ToolHandler> = {};
 
   for (const entityDef of upjack.entities ?? []) {
     const schema = app._schemas[entityDef.name];
     const { definitions, handlers } = buildEntityTools(app, entityDef, schema);
-    allDefinitions.push(...definitions);
     Object.assign(allHandlers, handlers);
+
+    const toolsFilter = (entityDef as unknown as Record<string, unknown>).tools as string[] | undefined;
+    if (toolsFilter) {
+      const listed = resolveListedTools(entityDef.name, entityDef.plural, toolsFilter);
+      listedDefinitions.push(...definitions.filter((d) => listed.has(d.name)));
+    } else {
+      listedDefinitions.push(...definitions);
+    }
   }
 
   // Collect resources
@@ -310,7 +346,7 @@ export function createServer(manifestPath: string, root?: string): Server {
 
   // Determine capabilities
   const capabilities: Record<string, Record<string, unknown>> = {};
-  if (allDefinitions.length > 0) capabilities.tools = {};
+  if (Object.keys(allHandlers).length > 0) capabilities.tools = {};
   if (resourceDefs.length > 0) capabilities.resources = {};
 
   // Create the low-level Server — raw JSON Schema, no Zod
@@ -319,10 +355,10 @@ export function createServer(manifestPath: string, root?: string): Server {
     { capabilities, instructions: buildInstructions(upjack) },
   );
 
-  // tools/list — return tool definitions with raw entity JSON Schema
-  if (allDefinitions.length > 0) {
+  // tools/list — return listed tool definitions only (filtered by entity tools array)
+  if (Object.keys(allHandlers).length > 0) {
     server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: allDefinitions,
+      tools: listedDefinitions,
     }));
 
     // tools/call — dispatch to the right entity operation
