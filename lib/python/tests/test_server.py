@@ -54,6 +54,17 @@ async def _get_tool_input_schema(mcp, name: str) -> dict[str, Any]:
         raise KeyError(f"Tool {name!r} not found")
 
 
+async def _get_tool_output_schema(mcp, name: str) -> dict[str, Any] | None:
+    from fastmcp import Client
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        for t in tools:
+            if t.name == name:
+                return t.outputSchema
+        raise KeyError(f"Tool {name!r} not found")
+
+
 async def _list_resource_uris(mcp) -> set[str]:
     from fastmcp import Client
 
@@ -498,9 +509,9 @@ class TestToolInputSchemas:
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         input_schema = _run(_get_tool_input_schema(mcp, "update_item"))
 
-        # Top-level requires entity_id and data
-        assert "entity_id" in input_schema["properties"]
-        assert set(input_schema["required"]) == {"entity_id", "data"}
+        # Top-level requires item_id and data
+        assert "item_id" in input_schema["properties"]
+        assert set(input_schema["required"]) == {"item_id", "data"}
         # Data schema has no required (partial update)
         data_schema = input_schema["properties"]["data"]
         assert "required" not in data_schema
@@ -535,6 +546,92 @@ class TestToolInputSchemas:
         assert input_schema["properties"]["data"]["type"] == "object"
 
 
+class TestToolOutputSchemas:
+    """Verify that auto-generated tools advertise outputSchema."""
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "item", "plural": "items", "prefix": "it"}],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(manifest_path, root=workspace)
+
+    def test_crud_tools_have_output_schema(self, mcp):
+        """create/get/update/delete tools should declare outputSchema."""
+        for tool_name in ["create_item", "get_item", "update_item", "delete_item"]:
+            schema = _run(_get_tool_output_schema(mcp, tool_name))
+            assert schema is not None, f"{tool_name} missing outputSchema"
+            assert schema["type"] == "object"
+            assert "properties" in schema
+
+    def test_list_tools_have_envelope_output_schema(self, mcp):
+        """list/search tools should declare envelope outputSchema."""
+        for tool_name in ["list_items", "search_items"]:
+            schema = _run(_get_tool_output_schema(mcp, tool_name))
+            assert schema is not None, f"{tool_name} missing outputSchema"
+            assert "entities" in schema["properties"]
+            assert schema["properties"]["entities"]["type"] == "array"
+            assert "count" in schema["properties"]
+
+    def test_relationship_tools_have_output_schema(self, mcp):
+        """Relationship tools should declare outputSchema."""
+        for tool_name in ["query_items_by_relationship", "get_related_item"]:
+            schema = _run(_get_tool_output_schema(mcp, tool_name))
+            assert schema is not None, f"{tool_name} missing outputSchema"
+            assert "entities" in schema["properties"]
+
+        schema = _run(_get_tool_output_schema(mcp, "get_item_composite"))
+        assert schema is not None, "get_item_composite missing outputSchema"
+        assert schema["type"] == "object"
+
+    def test_utility_tools_have_generic_output_schema(self, mcp):
+        """add_field and rebuild_index get auto-generated generic schemas (not entity-derived)."""
+        for tool_name in ["add_field", "rebuild_index"]:
+            schema = _run(_get_tool_output_schema(mcp, tool_name))
+            # FastMCP auto-generates from return type annotation — just a generic object
+            # These should NOT have entity-specific properties like "entities" or "count"
+            if schema is not None:
+                assert "entities" not in schema.get("properties", {})
+
+    def test_output_schema_strips_meta_keywords(self, tmp_path):
+        """outputSchema should not contain $schema or $id."""
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/widget",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+        }
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "widget", "plural": "widgets", "prefix": "wg"}],
+        )
+        (tmp_path / "schemas" / "widget.schema.json").write_text(json.dumps(entity_schema))
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        mcp = create_server(manifest_path, root=workspace)
+
+        schema = _run(_get_tool_output_schema(mcp, "create_widget"))
+        assert "$schema" not in schema
+        assert "$id" not in schema
+
+    def test_structured_content_in_response(self, mcp):
+        """Tool call results should include structuredContent."""
+        from fastmcp import Client
+
+        async def check():
+            async with Client(mcp) as client:
+                result = await client.call_tool("create_item", {"data": {"name": "Test"}})
+                # structuredContent is set on CallToolResult
+                assert result.structured_content is not None
+                assert result.structured_content["name"] == "Test"
+                assert result.structured_content["id"].startswith("it_")
+
+        _run(check())
+
+
 class TestServerToolsWork:
     """Verify that generated tools actually perform CRUD correctly."""
 
@@ -556,7 +653,7 @@ class TestServerToolsWork:
         assert created["name"] == "Widget"
         assert created["type"] == "item"
 
-        fetched = _run(_call_tool(mcp, "get_item", {"entity_id": created["id"]}))
+        fetched = _run(_call_tool(mcp, "get_item", {"item_id": created["id"]}))
         assert fetched["id"] == created["id"]
         assert fetched["name"] == "Widget"
 
@@ -567,7 +664,7 @@ class TestServerToolsWork:
                 mcp,
                 "update_item",
                 {
-                    "entity_id": created["id"],
+                    "item_id": created["id"],
                     "data": {"name": "New", "extra": "field"},
                 },
             )
@@ -579,33 +676,38 @@ class TestServerToolsWork:
         _run(_call_tool(mcp, "create_item", {"data": {"name": "A"}}))
         _run(_call_tool(mcp, "create_item", {"data": {"name": "B"}}))
 
-        items = _run(_call_tool(mcp, "list_items", {}))
-        assert len(items) == 2
+        result = _run(_call_tool(mcp, "list_items", {}))
+        assert result["count"] == 2
+        assert len(result["entities"]) == 2
+        assert "status_filter" in result
+        assert "limit" in result
 
     def test_search_finds_by_text(self, mcp):
         _run(_call_tool(mcp, "create_item", {"data": {"name": "Alpha"}}))
         _run(_call_tool(mcp, "create_item", {"data": {"name": "Beta"}}))
 
-        results = _run(_call_tool(mcp, "search_items", {"query": "Alpha"}))
-        assert len(results) == 1
-        assert results[0]["name"] == "Alpha"
+        result = _run(_call_tool(mcp, "search_items", {"query": "Alpha"}))
+        assert result["count"] == 1
+        assert result["entities"][0]["name"] == "Alpha"
+        assert "query" in result
+        assert "limit" in result
 
     def test_delete_soft(self, mcp):
         created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Doomed"}}))
-        result = _run(_call_tool(mcp, "delete_item", {"entity_id": created["id"]}))
+        result = _run(_call_tool(mcp, "delete_item", {"item_id": created["id"]}))
         assert result["status"] == "deleted"
 
         # Should not appear in list (default active filter)
-        items = _run(_call_tool(mcp, "list_items", {}))
-        assert items is None or len(items) == 0
+        result = _run(_call_tool(mcp, "list_items", {}))
+        assert result["count"] == 0
 
     def test_delete_hard(self, mcp):
         created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Gone"}}))
-        _run(_call_tool(mcp, "delete_item", {"entity_id": created["id"], "hard": True}))
+        _run(_call_tool(mcp, "delete_item", {"item_id": created["id"], "hard": True}))
 
         # Hard-deleted entities are gone from disk entirely
         result = _run(_call_tool(mcp, "list_items", {}))
-        assert result is None or all(r["id"] != created["id"] for r in result)
+        assert all(r["id"] != created["id"] for r in result["entities"])
 
 
 # ===========================================================================
@@ -645,15 +747,15 @@ class TestJsonStringDeserialization:
             _call_tool(
                 mcp,
                 "update_item",
-                {"entity_id": created["id"], "data": data_str},
+                {"item_id": created["id"], "data": data_str},
             )
         )
         assert updated["name"] == "Updated"
 
     def test_plain_string_args_not_mangled(self, mcp):
-        """Non-JSON string arguments (like entity_id) must not be altered."""
+        """Non-JSON string arguments (like item_id) must not be altered."""
         created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Test"}}))
-        fetched = _run(_call_tool(mcp, "get_item", {"entity_id": created["id"]}))
+        fetched = _run(_call_tool(mcp, "get_item", {"item_id": created["id"]}))
         assert fetched["id"] == created["id"]
 
     def test_dict_args_still_work(self, mcp):
@@ -1026,7 +1128,7 @@ class TestAddFieldTool:
         )
 
         # Read entity — should get hydrated default from new schema
-        fetched = _run(_call_tool(mcp, "get_widget", {"entity_id": created["id"]}))
+        fetched = _run(_call_tool(mcp, "get_widget", {"widget_id": created["id"]}))
         assert fetched["priority"] == "medium"
 
     def test_rejects_invalid_field_type(self, setup):
@@ -1229,15 +1331,15 @@ class TestRelationshipTools:
             )
         )
 
-        results = _run(
+        result = _run(
             _call_tool(
                 mcp,
                 "query_contacts_by_relationship",
                 {"rel": "works_at", "target_id": company["id"]},
             )
         )
-        assert len(results) == 1
-        assert results[0]["name"] == "Alice"
+        assert result["count"] == 1
+        assert result["entities"][0]["name"] == "Alice"
 
     def test_get_related_forward_through_mcp(self, setup):
         mcp = setup
@@ -1255,15 +1357,15 @@ class TestRelationshipTools:
             )
         )
 
-        results = _run(
+        result = _run(
             _call_tool(
                 mcp,
                 "get_related_contact",
-                {"entity_id": contact["id"], "direction": "forward"},
+                {"contact_id": contact["id"], "direction": "forward"},
             )
         )
-        assert len(results) == 1
-        assert results[0]["id"] == company["id"]
+        assert result["count"] == 1
+        assert result["entities"][0]["id"] == company["id"]
 
     def test_get_related_reverse_through_mcp(self, setup):
         mcp = setup
@@ -1281,15 +1383,15 @@ class TestRelationshipTools:
             )
         )
 
-        results = _run(
+        result = _run(
             _call_tool(
                 mcp,
                 "get_related_company",
-                {"entity_id": company["id"], "direction": "reverse"},
+                {"company_id": company["id"], "direction": "reverse"},
             )
         )
-        assert len(results) == 1
-        assert results[0]["id"] == contact["id"]
+        assert result["count"] == 1
+        assert result["entities"][0]["id"] == contact["id"]
 
     def test_get_composite_through_mcp(self, setup):
         mcp = setup
@@ -1311,7 +1413,7 @@ class TestRelationshipTools:
             _call_tool(
                 mcp,
                 "get_contact_composite",
-                {"entity_id": contact["id"]},
+                {"contact_id": contact["id"]},
             )
         )
         assert "_related" in result

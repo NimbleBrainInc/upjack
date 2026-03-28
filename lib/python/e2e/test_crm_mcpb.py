@@ -107,8 +107,8 @@ async def test_seed_and_list(bundle_path):
             assert seed_data["errors"] == []
 
             list_result = await session.call_tool("list_contacts", {})
-            contacts = json.loads(list_result.content[0].text)
-            assert len(contacts) == 2
+            result_data = json.loads(list_result.content[0].text)
+            assert result_data["count"] == 2
 
 
 @pytest.mark.asyncio
@@ -134,7 +134,7 @@ async def test_full_crud_cycle(bundle_path):
             assert contact_id.startswith("ct_")
 
             # Get
-            get_result = await session.call_tool("get_contact", {"entity_id": contact_id})
+            get_result = await session.call_tool("get_contact", {"contact_id": contact_id})
             fetched = json.loads(get_result.content[0].text)
             assert fetched["first_name"] == "Bob"
             assert fetched["email"] == "bob@test.com"
@@ -142,7 +142,7 @@ async def test_full_crud_cycle(bundle_path):
             # Update
             update_result = await session.call_tool(
                 "update_contact",
-                {"entity_id": contact_id, "data": {"lead_score": 85}},
+                {"contact_id": contact_id, "data": {"lead_score": 85}},
             )
             updated = json.loads(update_result.content[0].text)
             assert updated["lead_score"] == 85
@@ -153,19 +153,16 @@ async def test_full_crud_cycle(bundle_path):
                 "search_contacts",
                 {"query": "Bob"},
             )
-            results = json.loads(search_result.content[0].text)
-            assert len(results) == 1
-            assert results[0]["lead_score"] == 85
+            search_data = json.loads(search_result.content[0].text)
+            assert search_data["count"] == 1
+            assert search_data["entities"][0]["lead_score"] == 85
 
             # Delete
-            delete_result = await session.call_tool("delete_contact", {"entity_id": contact_id})
+            delete_result = await session.call_tool("delete_contact", {"contact_id": contact_id})
             deleted = json.loads(delete_result.content[0].text)
             assert deleted["status"] == "deleted"
 
             # Verify gone from list
             list_result = await session.call_tool("list_contacts", {})
-            if list_result.content:
-                active = json.loads(list_result.content[0].text)
-            else:
-                active = []
-            assert all(c["id"] != contact_id for c in active)
+            list_data = json.loads(list_result.content[0].text)
+            assert all(c["id"] != contact_id for c in list_data["entities"])

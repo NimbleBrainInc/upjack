@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] - 2026-03-27
+
+### Changed
+- **Breaking:** CRUD tools use entity-specific parameter names (`contact_id`, `deal_id`) instead of generic `entity_id`
+- **Breaking:** `list_*` and `search_*` tools return `{entities: [...], count, ...}` envelope instead of bare arrays
+- **Breaking:** `query_*_by_relationship` and `get_related_*` tools return the same envelope format
+- All entity-derived tools declare `outputSchema` and return `structuredContent` (MCP spec 2025-06-18)
+- Added `build_entity_output_schema()` and `build_list_output_schema()` helpers to `upjack.schema`
+- Internal: `_wrap_list()` helper for consistent response envelope construction
+
 ## [0.2.0] - 2026-03-26
 
 ### Added

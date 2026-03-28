@@ -212,3 +212,38 @@ def validate_schema_change(
         )
 
     return diagnostics
+
+
+def build_entity_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Build an output schema for a single-entity tool response.
+
+    Returns the full entity schema (including base fields) with JSON Schema
+    meta keywords stripped, suitable for use as a tool's ``outputSchema``.
+    """
+    result = copy.deepcopy(schema)
+    result.pop("$schema", None)
+    result.pop("$id", None)
+    return result
+
+
+def build_list_output_schema(entity_schema: dict[str, Any]) -> dict[str, Any]:
+    """Build an output schema for a list/search response envelope.
+
+    Returns an object schema with ``entities`` (array of entity schemas)
+    and ``count`` (integer).
+    """
+    item_schema = build_entity_output_schema(entity_schema)
+    return {
+        "type": "object",
+        "properties": {
+            "entities": {
+                "type": "array",
+                "items": item_schema,
+            },
+            "count": {
+                "type": "integer",
+                "description": "Number of entities returned",
+            },
+        },
+        "required": ["entities", "count"],
+    }

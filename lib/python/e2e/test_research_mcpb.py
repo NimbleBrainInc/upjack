@@ -85,5 +85,5 @@ async def test_seed_data(bundle_path):
             assert seed_data["errors"] == []
 
             list_result = await session.call_tool("list_topics", {})
-            topics = json.loads(list_result.content[0].text)
-            assert len(topics) == 2
+            result_data = json.loads(list_result.content[0].text)
+            assert result_data["count"] == 2

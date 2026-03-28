@@ -21,7 +21,12 @@ from mcp.types import TextContent
 from upjack.activity import ACTIVITY_ENTITY_DEF
 from upjack.app import UpjackApp
 from upjack.relations import rebuild_index
-from upjack.schema import load_schema, validate_schema_change
+from upjack.schema import (
+    build_entity_output_schema,
+    build_list_output_schema,
+    load_schema,
+    validate_schema_change,
+)
 
 # Base entity fields auto-managed by the framework — stripped from tool input schemas
 _BASE_ENTITY_KEYS = frozenset(
@@ -38,6 +43,16 @@ _BASE_ENTITY_KEYS = frozenset(
         "relationships",
     }
 )
+
+
+def _wrap_list(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+    """Wrap a list of entities in a standard response envelope."""
+    result: dict[str, Any] = {
+        "entities": entities,
+        "count": len(entities),
+    }
+    result.update(extra)
+    return result
 
 
 def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) -> dict[str, Any]:
@@ -75,6 +90,7 @@ def _make_entity_tool(
     description: str,
     parameters: dict[str, Any],
     handler: Callable[[dict[str, Any]], dict[str, Any]],
+    output_schema: dict[str, Any] | None = None,
 ) -> Tool:
     """Create a Tool instance with raw JSON Schema parameters and a handler closure.
 
@@ -95,10 +111,17 @@ def _make_entity_tool(
             else:
                 parsed[k] = v
         result = handler(parsed)
-        return ToolResult(content=[TextContent(type="text", text=json.dumps(result, default=str))])
+        text = json.dumps(result, default=str)
+        structured = json.loads(text) if isinstance(result, dict) else None
+        return ToolResult(
+            content=[TextContent(type="text", text=text)],
+            structured_content=structured,
+        )
 
     tool_cls = type(f"_{name}_tool", (Tool,), {"run": run})
-    return tool_cls(name=name, description=description, parameters=parameters)
+    return tool_cls(
+        name=name, description=description, parameters=parameters, output_schema=output_schema
+    )
 
 
 def _register_entity_tools(
@@ -113,6 +136,11 @@ def _register_entity_tools(
     prefix = entity_def["prefix"]
 
     id_hint = f"IDs start with {prefix}_"
+    id_param = f"{name}_id"
+
+    # Build output schemas from the entity's JSON Schema
+    entity_out = build_entity_output_schema(schema) if schema else None
+    list_out = build_list_output_schema(schema) if schema else None
 
     # --- create_{name} ---
     # Use the entity's JSON Schema so LLMs see full field structure
@@ -131,15 +159,29 @@ def _register_entity_tools(
                 "required": ["data"],
             },
             handler=lambda args, _n=name: app.create_entity(_n, args["data"]),
+            output_schema=entity_out,
         )
     )
 
     # --- get_{name} ---
-    get_desc = f"Get a {name} by ID. {id_hint}."
-
-    @mcp.tool(name=f"get_{name}", description=get_desc)
-    def get_tool(entity_id: str, _name: str = name) -> dict[str, Any]:
-        return app.get_entity(_name, entity_id)
+    mcp.add_tool(
+        _make_entity_tool(
+            name=f"get_{name}",
+            description=f"Get a {name} by ID. {id_hint}.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    id_param: {
+                        "type": "string",
+                        "description": f"{name} ID ({prefix}_...)",
+                    },
+                },
+                "required": [id_param],
+            },
+            handler=lambda args, _n=name, _p=id_param: app.get_entity(_n, args[_p]),
+            output_schema=entity_out,
+        )
+    )
 
     # --- update_{name} ---
     # Use the entity's JSON Schema with required stripped (partial merge)
@@ -155,15 +197,18 @@ def _register_entity_tools(
             parameters={
                 "type": "object",
                 "properties": {
-                    "entity_id": {
+                    id_param: {
                         "type": "string",
                         "description": f"{name} ID ({prefix}_...)",
                     },
                     "data": update_data_schema,
                 },
-                "required": ["entity_id", "data"],
+                "required": [id_param, "data"],
             },
-            handler=lambda args, _n=name: app.update_entity(_n, args["entity_id"], args["data"]),
+            handler=lambda args, _n=name, _p=id_param: app.update_entity(
+                _n, args[_p], args["data"]
+            ),
+            output_schema=entity_out,
         )
     )
 
@@ -172,11 +217,10 @@ def _register_entity_tools(
         f"List {plural}. Filters by status (default: active). Returns newest first. {id_hint}."
     )
 
-    @mcp.tool(name=f"list_{plural}", description=list_desc)
-    def list_tool(
-        status: str = "active", limit: int = 50, _name: str = name
-    ) -> list[dict[str, Any]]:
-        return app.list_entities(_name, status=status, limit=limit)
+    @mcp.tool(name=f"list_{plural}", description=list_desc, output_schema=list_out)
+    def list_tool(status: str = "active", limit: int = 50, _name: str = name) -> dict[str, Any]:
+        entities = app.list_entities(_name, status=status, limit=limit)
+        return _wrap_list(entities, status_filter=status, limit=limit)
 
     # --- search_{plural} ---
     search_desc = (
@@ -186,25 +230,46 @@ def _register_entity_tools(
         f"$contains, $exists. Sort with '-field' for descending. {id_hint}."
     )
 
-    @mcp.tool(name=f"search_{plural}", description=search_desc)
+    @mcp.tool(name=f"search_{plural}", description=search_desc, output_schema=list_out)
     def search_tool(
         query: str | None = None,
         filter: dict[str, Any] | None = None,
         sort: str = "-updated_at",
         limit: int = 20,
         _name: str = name,
-    ) -> list[dict[str, Any]]:
-        return app.search_entities(_name, query=query, filter=filter, sort=sort, limit=limit)
+    ) -> dict[str, Any]:
+        entities = app.search_entities(_name, query=query, filter=filter, sort=sort, limit=limit)
+        return _wrap_list(entities, query=query, limit=limit)
 
     # --- delete_{name} ---
-    delete_desc = (
-        f"Delete a {name} by ID. Soft delete by default (sets status to 'deleted'). "
-        f"Set hard=true to permanently remove. {id_hint}."
+    mcp.add_tool(
+        _make_entity_tool(
+            name=f"delete_{name}",
+            description=(
+                f"Delete a {name} by ID. Soft delete by default (sets status to 'deleted'). "
+                f"Set hard=true to permanently remove. {id_hint}."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    id_param: {
+                        "type": "string",
+                        "description": f"{name} ID ({prefix}_...)",
+                    },
+                    "hard": {
+                        "type": "boolean",
+                        "description": "Permanently remove instead of soft delete.",
+                        "default": False,
+                    },
+                },
+                "required": [id_param],
+            },
+            handler=lambda args, _n=name, _p=id_param: app.delete_entity(
+                _n, args[_p], hard=args.get("hard", False)
+            ),
+            output_schema=entity_out,
+        )
     )
-
-    @mcp.tool(name=f"delete_{name}", description=delete_desc)
-    def delete_tool(entity_id: str, hard: bool = False, _name: str = name) -> dict[str, Any]:
-        return app.delete_entity(_name, entity_id, hard=hard)
 
 
 def _register_seed_tool(
@@ -391,10 +456,16 @@ def _register_relationship_tools(
     mcp: FastMCP,
     app: UpjackApp,
     entity_def: dict[str, Any],
+    schema: dict[str, Any] | None = None,
 ) -> None:
     """Register relationship query tools for an entity type."""
     name = entity_def["name"]
     plural = entity_def.get("plural", name + "s")
+    id_param = f"{name}_id"
+
+    # Output schemas for relationship tools
+    list_out = build_list_output_schema(schema) if schema else None
+    entity_out = build_entity_output_schema(schema) if schema else None
 
     @mcp.tool(
         name=f"query_{plural}_by_relationship",
@@ -402,44 +473,86 @@ def _register_relationship_tools(
             f"Find {plural} that have a specific relationship pointing to a target entity. "
             f"For example, find all {plural} that 'belongs_to' a given entity."
         ),
+        output_schema=list_out,
     )
     def query_by_rel(
         rel: str,
         target_id: str,
         filter: dict[str, Any] | None = None,
         limit: int = 50,
-    ) -> list[dict[str, Any]]:
-        return app.query_by_relationship(name, rel, target_id, filter=filter, limit=limit)
-
-    @mcp.tool(
-        name=f"get_related_{name}",
-        description=(
-            f"Follow relationship edges from a {name}. "
-            f"'forward' returns entities this {name} points to. "
-            f"'reverse' returns entities that point to this {name}."
-        ),
-    )
-    def get_related(
-        entity_id: str,
-        rel: str | None = None,
-        direction: str = "forward",
-    ) -> list[dict[str, Any]]:
-        return app.get_related(entity_id, rel=rel, direction=direction)
-
-    @mcp.tool(
-        name=f"get_{name}_composite",
-        description=(
-            f"Load a {name} with all related entities in one call. "
-            f"Returns the entity with a '_related' key containing forward "
-            f"relationships (keyed by rel name) and reverse relationships "
-            f"(keyed by ~rel name)."
-        ),
-    )
-    def get_composite(
-        entity_id: str,
-        depth: int = 1,
+        _name: str = name,
     ) -> dict[str, Any]:
-        return app.get_composite(name, entity_id, depth=depth)
+        entities = app.query_by_relationship(_name, rel, target_id, filter=filter, limit=limit)
+        return _wrap_list(entities)
+
+    mcp.add_tool(
+        _make_entity_tool(
+            name=f"get_related_{name}",
+            description=(
+                f"Follow relationship edges from a {name}. "
+                f"'forward' returns entities this {name} points to. "
+                f"'reverse' returns entities that point to this {name}."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    id_param: {
+                        "type": "string",
+                        "description": f"{name} ID ({entity_def['prefix']}_...)",
+                    },
+                    "rel": {
+                        "type": "string",
+                        "description": "Relationship type to follow. Omit to follow all.",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "description": "'forward' or 'reverse'.",
+                        "default": "forward",
+                    },
+                },
+                "required": [id_param],
+            },
+            handler=lambda args, _p=id_param: _wrap_list(
+                app.get_related(
+                    args[_p],
+                    rel=args.get("rel"),
+                    direction=args.get("direction", "forward"),
+                )
+            ),
+            output_schema=list_out,
+        )
+    )
+
+    mcp.add_tool(
+        _make_entity_tool(
+            name=f"get_{name}_composite",
+            description=(
+                f"Load a {name} with all related entities in one call. "
+                f"Returns the entity with a '_related' key containing forward "
+                f"relationships (keyed by rel name) and reverse relationships "
+                f"(keyed by ~rel name)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    id_param: {
+                        "type": "string",
+                        "description": f"{name} ID ({entity_def['prefix']}_...)",
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Traversal depth (default 1).",
+                        "default": 1,
+                    },
+                },
+                "required": [id_param],
+            },
+            handler=lambda args, _n=name, _p=id_param: app.get_composite(
+                _n, args[_p], depth=args.get("depth", 1)
+            ),
+            output_schema=entity_out,
+        )
+    )
 
 
 def _register_rebuild_index_tool(
@@ -648,10 +761,12 @@ def create_server(manifest_path: str | Path, root: str | Path = ".") -> FastMCP:
 
     # Register relationship tools for each entity type
     for entity_def in upjack.get("entities", []):
-        _register_relationship_tools(mcp, app, entity_def)
+        schema = app._schemas.get(entity_def["name"])
+        _register_relationship_tools(mcp, app, entity_def, schema)
     # Also register for activity if enabled
     if upjack.get("activities"):
-        _register_relationship_tools(mcp, app, ACTIVITY_ENTITY_DEF)
+        activity_schema = app._schemas.get("activity")
+        _register_relationship_tools(mcp, app, ACTIVITY_ENTITY_DEF, activity_schema)
     _register_rebuild_index_tool(mcp, app)
 
     # Register resources

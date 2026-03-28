@@ -476,8 +476,8 @@ class TestCrmServer:
         assert result["errors"] == []
 
         # Verify entities actually exist
-        contacts = _run(_call_tool(mcp, "list_contacts", {}))
-        assert len(contacts) == 2
+        result = _run(_call_tool(mcp, "list_contacts", {}))
+        assert result["count"] == 2
 
     def test_server_name_is_crm(self, mcp):
         assert mcp.name == "CRM"
@@ -771,13 +771,13 @@ class TestTodoServer:
 
         # Verify entities actually exist
         tasks = _run(_call_tool(mcp, "list_tasks", {}))
-        assert len(tasks) == 4
+        assert tasks["count"] == 4
 
         projects = _run(_call_tool(mcp, "list_projects", {}))
-        assert len(projects) == 2
+        assert projects["count"] == 2
 
         labels = _run(_call_tool(mcp, "list_labels", {}))
-        assert len(labels) == 3
+        assert labels["count"] == 3
 
     def test_server_name_is_todo_list(self, mcp):
         assert mcp.name == "Todo List"
@@ -834,7 +834,7 @@ class TestSchemaEvolutionCrm:
         assert result["success"] is True
 
         # Old contact should get the default via hydrate-on-read
-        fetched = _run(_call_tool(mcp, "get_contact", {"entity_id": contact["id"]}))
+        fetched = _run(_call_tool(mcp, "get_contact", {"contact_id": contact["id"]}))
         assert fetched["engagement_score"] == 0
         assert fetched["first_name"] == "Alice"
 
@@ -861,9 +861,9 @@ class TestSchemaEvolutionCrm:
             )
         )
 
-        contacts = _run(_call_tool(mcp, "list_contacts", {}))
-        assert len(contacts) == 1
-        assert contacts[0]["priority_tier"] == "standard"
+        result = _run(_call_tool(mcp, "list_contacts", {}))
+        assert result["count"] == 1
+        assert result["entities"][0]["priority_tier"] == "standard"
 
     def test_hydrate_on_read_search(self, mcp):
         """Search contacts hydrates defaults after schema evolution."""
@@ -888,9 +888,9 @@ class TestSchemaEvolutionCrm:
             )
         )
 
-        results = _run(_call_tool(mcp, "search_contacts", {"query": "Charlie"}))
-        assert len(results) == 1
-        assert results[0]["is_vip"] is False
+        result = _run(_call_tool(mcp, "search_contacts", {"query": "Charlie"}))
+        assert result["count"] == 1
+        assert result["entities"][0]["is_vip"] is False
 
 
 class TestSchemaEvolutionTodo:
@@ -930,7 +930,7 @@ class TestSchemaEvolutionTodo:
         )
         assert result["success"] is True
 
-        fetched = _run(_call_tool(mcp, "get_task", {"entity_id": task["id"]}))
+        fetched = _run(_call_tool(mcp, "get_task", {"task_id": task["id"]}))
         assert fetched["story_points"] == 1
         assert fetched["title"] == "Write tests"
 
@@ -972,7 +972,7 @@ class TestSchemaEvolutionResearch:
         )
         assert result["success"] is True
 
-        fetched = _run(_call_tool(mcp, "get_topic", {"entity_id": topic["id"]}))
+        fetched = _run(_call_tool(mcp, "get_topic", {"topic_id": topic["id"]}))
         assert fetched["confidence_level"] == "low"
         assert fetched["title"] == "AI Safety"
 
@@ -1114,15 +1114,15 @@ class TestCrmRelationshipServer:
             )
         )
 
-        results = _run(
+        result = _run(
             _call_tool(
                 mcp,
                 "query_deals_by_relationship",
                 {"rel": "company", "target_id": company["id"]},
             )
         )
-        assert len(results) == 1
-        assert results[0]["id"] == deal["id"]
+        assert result["count"] == 1
+        assert result["entities"][0]["id"] == deal["id"]
 
     def test_get_deal_composite_tool(self, mcp):
         company = _run(
@@ -1159,7 +1159,7 @@ class TestCrmRelationshipServer:
             )
         )
 
-        result = _run(_call_tool(mcp, "get_deal_composite", {"entity_id": deal["id"]}))
+        result = _run(_call_tool(mcp, "get_deal_composite", {"deal_id": deal["id"]}))
         assert "primary_contact" in result["_related"]
         assert "company" in result["_related"]
 

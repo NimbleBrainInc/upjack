@@ -2,7 +2,7 @@
 name: upjack-app-builder
 description: Builds complete, compliant NimbleBrain Upjack apps from natural language descriptions. Generates manifest, entity schemas, skills, context, seed data, and server entry point. Use when creating a new Upjack app, building an AI-native app, or scaffolding a domain-specific application. Triggers include "create me a todo app", "build an upjack app", "new upjack app for", "scaffold an app".
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   category: development
   tags:
     - upjack
