@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] - 2026-03-27
+
+### Fixed
+- `create_entity` no longer generates a filename ULID that differs from the `id` in the JSON content when data includes an `id` field
+- Provided IDs are now respected when valid for the entity's prefix (enables deterministic seeding with cross-references)
+- Duplicate ID detection — `create_entity` raises `ValueError` if an entity with that ID already exists
+- `type` field in data no longer leaks into the record via `update()` — `entity_type` parameter always wins
+- Seed tool now passes `id` through to `create_entity` so seed data can use stable IDs
+
 ## [0.3.0] - 2026-03-27
 
 ### Changed
