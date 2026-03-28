@@ -32,6 +32,7 @@ Thumbs.db
 # Claude (commit skills, ignore local state)
 .claude/settings.local.json
 .claude/memory/
+.tasks/
 
 # Upjack workspace (runtime entity data)
 workspace/
