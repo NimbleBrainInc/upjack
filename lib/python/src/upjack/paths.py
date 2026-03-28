@@ -1,6 +1,20 @@
 """Workspace path resolution for upjack apps."""
 
+import os
 from pathlib import Path
+
+
+def resolve_root(cli_root: str | Path | None = None) -> Path:
+    """Resolve the workspace root directory.
+
+    Priority: UPJACK_ROOT env var > cli_root argument > .upjack fallback.
+    """
+    env = os.environ.get("UPJACK_ROOT")
+    if env:
+        return Path(env).resolve()
+    if cli_root is not None:
+        return Path(cli_root).resolve()
+    return Path(".upjack").resolve()
 
 
 def _check_within_root(root: Path, target: Path) -> Path:

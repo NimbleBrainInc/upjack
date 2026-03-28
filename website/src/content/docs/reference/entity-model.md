@@ -8,7 +8,7 @@ draft: false
 
 Every Upjack entity conforms to a two-layer JSON Schema composition. The **base entity schema** defines common metadata fields shared by all entities across all apps. The **app entity schema** defines domain-specific fields for a particular entity type. These are composed at validation time using JSON Schema `allOf`.
 
-Entities are stored as individual JSON files in the tenant workspace git repository. In the full platform runtime, every write operation (create, update, delete) is a git commit, providing a complete audit trail.
+Entities are stored as individual JSON files in the workspace directory. The workspace root is configurable via the `UPJACK_ROOT` environment variable, a `--root` CLI argument, or defaults to `.upjack` in the current directory. In the full platform runtime, every write operation (create, update, delete) is a git commit, providing a complete audit trail.
 
 > **Implementation note:** The `upjack` library handles file I/O only. Git commits are the responsibility of the hosting platform or calling code. The commit conventions below describe the intended platform behavior, not current library behavior.
 

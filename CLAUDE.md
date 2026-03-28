@@ -128,6 +128,7 @@ git push origin main --tags
 - **Three tiers**: schemas + skills (no code) → MCP server (`create_server()` / `createServer()`) → custom server (optional)
 - **Entity IDs**: `{prefix}_{ULID}` where prefix is 2-4 lowercase chars
 - **Storage**: JSON files at `{namespace}/data/{plural}/{id}.json`
+- **Workspace root**: Resolved via `UPJACK_ROOT` env var > `--root` CLI arg > `.upjack`. Runners (mpak, NimbleBrain) set `UPJACK_ROOT` to a persistent directory outside the bundle cache.
 - **FastMCP is optional** — Python core works without it; install `upjack[mcp]` for server support
 - **@modelcontextprotocol/sdk is optional** — TypeScript core works without it; import `upjack/server` for server support
 - **File-based reverse index for relationships** — write-time updated at `{namespace}/data/_index/relations.json`, auto-rebuilt from entity files if missing or corrupt

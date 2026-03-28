@@ -1,5 +1,12 @@
 import { resolve, sep } from "node:path";
 
+export function resolveRoot(cliRoot?: string): string {
+  const env = process.env.UPJACK_ROOT;
+  if (env) return resolve(env);
+  if (cliRoot !== undefined) return resolve(cliRoot);
+  return resolve(".upjack");
+}
+
 function checkWithinRoot(root: string, target: string): string {
   const rootResolved = resolve(root);
   const targetResolved = resolve(target);

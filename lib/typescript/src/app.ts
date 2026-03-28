@@ -9,6 +9,7 @@ import {
   listEntities,
   updateEntity,
 } from "./entity.js";
+import { resolveRoot } from "./paths.js";
 import { loadSchema } from "./schema.js";
 import { searchEntities as _searchEntities } from "./search.js";
 
@@ -34,11 +35,11 @@ export class UpjackApp {
   constructor(
     namespace: string,
     entities: EntityDefinition[],
-    root = ".",
+    root?: string,
     schemas?: Record<string, Record<string, unknown>>,
   ) {
     this.namespace = namespace;
-    this.root = root;
+    this.root = resolveRoot(root);
     this._entities = Object.fromEntries(entities.map((e) => [e.name, e]));
     this._schemas = schemas ?? {};
   }
@@ -46,7 +47,7 @@ export class UpjackApp {
   /**
    * Load an UpjackApp from a MCPB manifest.json.
    */
-  static fromManifest(manifestPath: string, root = "."): UpjackApp {
+  static fromManifest(manifestPath: string, root?: string): UpjackApp {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
     const upjack = manifest?._meta?.["ai.nimblebrain/upjack"] as
       | UpjackManifestExtension

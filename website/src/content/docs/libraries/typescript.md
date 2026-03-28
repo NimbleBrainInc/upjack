@@ -65,11 +65,21 @@ import { createServer, startServer } from "upjack/server";
 startServer("manifest.json");
 
 // Or create the server for more control
-const server = createServer("manifest.json", "./workspace");
+const server = createServer("manifest.json");
 // Customize before starting...
 ```
 
 This generates CRUD tools for every entity type in the manifest, exposes context and skills as MCP resources, and handles validation automatically. See the [CRM example](https://github.com/NimbleBrainInc/upjack/tree/main/examples/crm/server.ts) for a complete example.
+
+## Configuration
+
+The workspace root (where entity data is stored) is resolved in this order:
+
+1. `UPJACK_ROOT` environment variable
+2. `--root` CLI argument (when using `upjack serve`)
+3. `.upjack` in the current directory (default)
+
+Runners like mpak or NimbleBrain set `UPJACK_ROOT` automatically to ensure data persists outside the bundle cache.
 
 ## Types
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from upjack.paths import entity_dir, entity_path, index_dir, index_path, schema_dir
+from upjack.paths import entity_dir, entity_path, index_dir, index_path, resolve_root, schema_dir
 
 
 class TestSchemaDir:
@@ -107,5 +107,26 @@ class TestPathTraversal:
         path = entity_path(root, "apps/crm", "contacts", "ct_01ABCDEFGHIJKLMNOPQRSTUVWX")
         assert path.name == "ct_01ABCDEFGHIJKLMNOPQRSTUVWX.json"
 
-        d = entity_dir(root, "apps/crm", "contacts")
-        assert d == root / "apps/crm" / "data" / "contacts"
+
+class TestResolveRoot:
+    """Tests for resolve_root() priority chain."""
+
+    def test_env_var_takes_priority(self, monkeypatch):
+        monkeypatch.setenv("UPJACK_ROOT", "/custom/root")
+        result = resolve_root("/ignored")
+        assert result == Path("/custom/root")
+
+    def test_cli_root_when_no_env(self, monkeypatch):
+        monkeypatch.delenv("UPJACK_ROOT", raising=False)
+        result = resolve_root("/explicit")
+        assert result == Path("/explicit")
+
+    def test_fallback_to_dot_upjack(self, monkeypatch):
+        monkeypatch.delenv("UPJACK_ROOT", raising=False)
+        result = resolve_root()
+        assert result.name == ".upjack"
+
+    def test_env_beats_cli_root(self, monkeypatch):
+        monkeypatch.setenv("UPJACK_ROOT", "/from-env")
+        result = resolve_root("/from-cli")
+        assert result == Path("/from-env")

@@ -282,7 +282,7 @@ function buildInstructions(upjack: UpjackManifestExtension): string {
  * @param root - Workspace root directory.
  * @returns Configured Server instance.
  */
-export function createServer(manifestPath: string, root = "."): Server {
+export function createServer(manifestPath: string, root?: string): Server {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
   const manifestDir = dirname(manifestPath);
 
@@ -389,7 +389,7 @@ export function createServer(manifestPath: string, root = "."): Server {
 /**
  * Start the MCP server with stdio transport.
  */
-export async function startServer(manifestPath: string, root = "."): Promise<void> {
+export async function startServer(manifestPath: string, root?: string): Promise<void> {
   const server = createServer(manifestPath, root);
   const transport = new StdioServerTransport();
   await server.connect(transport);

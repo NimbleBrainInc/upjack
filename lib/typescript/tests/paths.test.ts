@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { entityDir, entityPath, schemaDir } from "../src/paths.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { entityDir, entityPath, resolveRoot, schemaDir } from "../src/paths.js";
 
 describe("schemaDir", () => {
   it("returns correct path", () => {
@@ -65,5 +65,37 @@ describe("path traversal", () => {
 
     const dir = entityDir(workspace, "apps/crm", "contacts");
     expect(dir).toBe(`${workspace}/apps/crm/data/contacts`);
+  });
+});
+
+describe("resolveRoot", () => {
+  const originalEnv = process.env.UPJACK_ROOT;
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.UPJACK_ROOT = originalEnv;
+    } else {
+      delete process.env.UPJACK_ROOT;
+    }
+  });
+
+  it("uses env var when set", () => {
+    process.env.UPJACK_ROOT = "/custom/root";
+    expect(resolveRoot()).toBe(resolve("/custom/root"));
+  });
+
+  it("uses cliRoot when no env var", () => {
+    delete process.env.UPJACK_ROOT;
+    expect(resolveRoot("/explicit")).toBe(resolve("/explicit"));
+  });
+
+  it("falls back to .upjack", () => {
+    delete process.env.UPJACK_ROOT;
+    expect(resolveRoot()).toBe(resolve(".upjack"));
+  });
+
+  it("env var beats cliRoot", () => {
+    process.env.UPJACK_ROOT = "/from-env";
+    expect(resolveRoot("/from-cli")).toBe(resolve("/from-env"));
   });
 });

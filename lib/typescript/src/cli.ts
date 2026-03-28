@@ -41,7 +41,7 @@ const SERVER_TEMPLATE = `import { resolve } from "node:path";
 import { startServer } from "upjack/server";
 
 const manifest = resolve(import.meta.dirname, "manifest.json");
-startServer(manifest, "./workspace");
+startServer(manifest);
 `;
 
 export function slugify(name: string): string {
@@ -184,16 +184,18 @@ async function serve(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  let root = "./workspace";
+  let root: string | undefined;
   const rootIdx = args.indexOf("--root");
   if (rootIdx !== -1 && args[rootIdx + 1]) {
     root = args[rootIdx + 1];
   }
 
-  mkdirSync(resolve(root), { recursive: true });
+  const { resolveRoot } = await import("./paths.js");
+  const resolved = resolveRoot(root);
+  mkdirSync(resolved, { recursive: true });
 
   const { startServer } = await import("./server.js");
-  await startServer(resolve(manifestPath), resolve(root));
+  await startServer(resolve(manifestPath), resolved);
 }
 
 export async function main(): Promise<void> {

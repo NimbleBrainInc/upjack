@@ -13,7 +13,7 @@ from upjack.entity import (
     update_entity,
 )
 from upjack.ids import generate_id, parse_id, validate_id
-from upjack.paths import entity_dir, entity_path, index_dir, index_path, schema_dir
+from upjack.paths import entity_dir, entity_path, index_dir, index_path, resolve_root, schema_dir
 from upjack.relations import query_reverse, rebuild_index
 from upjack.schema import (
     hydrate_defaults,
@@ -44,6 +44,7 @@ __all__ = [
     "query_reverse",
     "rebuild_index",
     "resolve_entity_schema",
+    "resolve_root",
     "schema_dir",
     "search_entities",
     "update_entity",

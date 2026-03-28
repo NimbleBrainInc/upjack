@@ -23,19 +23,21 @@ class UpjackApp:
         self,
         namespace: str,
         entities: list[dict[str, Any]],
-        root: str | Path = ".",
+        root: str | Path | None = None,
         schemas: dict[str, dict[str, Any]] | None = None,
         manifest_dir: Path | None = None,
     ) -> None:
+        from upjack.paths import resolve_root
+
         self.namespace = namespace
-        self.root = Path(root)
+        self.root = resolve_root(root)
         self._entities = {e["name"]: e for e in entities}
         self._schemas = schemas or {}
         self._manifest_dir = manifest_dir
         self._prefix_map = {e["prefix"]: e["name"] for e in entities}
 
     @classmethod
-    def from_manifest(cls, manifest_path: str | Path, root: str | Path = ".") -> "UpjackApp":
+    def from_manifest(cls, manifest_path: str | Path, root: str | Path | None = None) -> "UpjackApp":
         """Load a UpjackApp from a MCPB manifest.json.
 
         Reads the manifest, extracts the upjack extension from

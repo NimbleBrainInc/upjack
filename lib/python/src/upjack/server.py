@@ -718,7 +718,7 @@ def _build_instructions(upjack: dict[str, Any]) -> str:
     return instructions
 
 
-def create_server(manifest_path: str | Path, root: str | Path = ".") -> FastMCP:
+def create_server(manifest_path: str | Path, root: str | Path | None = None) -> FastMCP:
     """Create a FastMCP server from an Upjack manifest.
 
     Args:
@@ -785,13 +785,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--root",
-        default="./workspace",
-        help="Workspace root directory (default: ./workspace)",
+        default=None,
+        help="Workspace root (default: UPJACK_ROOT env or .upjack)",
     )
     args = parser.parse_args()
 
+    from upjack.paths import resolve_root
+
     manifest_path = Path(args.manifest).resolve()
-    root = Path(args.root).resolve()
+    root = resolve_root(args.root)
 
     # Ensure workspace exists
     root.mkdir(parents=True, exist_ok=True)

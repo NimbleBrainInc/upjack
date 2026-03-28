@@ -45,7 +45,7 @@ from pathlib import Path
 from upjack.server import create_server
 
 manifest = Path(__file__).parent / "manifest.json"
-mcp = create_server(manifest, root="./workspace")
+mcp = create_server(manifest)
 
 if __name__ == "__main__":
     mcp.run()
@@ -186,11 +186,11 @@ def init(args: argparse.Namespace) -> None:
 
 def serve(args: argparse.Namespace) -> None:
     """Run the MCP server from a manifest."""
-    # Delegate to the existing server.main() logic
+    from upjack.paths import resolve_root
     from upjack.server import create_server
 
     manifest_path = Path(args.manifest).resolve()
-    root = Path(args.root).resolve()
+    root = resolve_root(args.root)
     root.mkdir(parents=True, exist_ok=True)
 
     mcp = create_server(manifest_path, root)
@@ -217,7 +217,7 @@ def main() -> None:
     serve_parser = subparsers.add_parser("serve", help="Run MCP server from a manifest")
     serve_parser.add_argument("manifest", help="Path to manifest.json")
     serve_parser.add_argument(
-        "--root", default="./workspace", help="Workspace root (default: ./workspace)"
+        "--root", default=None, help="Workspace root (default: UPJACK_ROOT env or .upjack)"
     )
 
     args = parser.parse_args()

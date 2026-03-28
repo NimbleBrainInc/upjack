@@ -36,6 +36,7 @@ Thumbs.db
 
 # Upjack workspace (runtime entity data)
 workspace/
+.upjack/
 
 # Vendored dependencies
 **/deps/

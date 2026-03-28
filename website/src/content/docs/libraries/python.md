@@ -50,11 +50,21 @@ app.delete_entity("contact", contact["id"])
 ```python
 from upjack.server import create_server
 
-mcp = create_server("manifest.json", root="./workspace")
+mcp = create_server("manifest.json")
 mcp.run()
 ```
 
 This generates CRUD tools for every entity type in the manifest, exposes context and skills as MCP resources, and handles validation automatically. See the [CRM example](https://github.com/NimbleBrainInc/upjack/tree/main/examples/crm/server.py) for a complete example.
+
+## Configuration
+
+The workspace root (where entity data is stored) is resolved in this order:
+
+1. `UPJACK_ROOT` environment variable
+2. `--root` CLI argument (when using `upjack serve`)
+3. `.upjack` in the current directory (default)
+
+Runners like mpak or NimbleBrain set `UPJACK_ROOT` automatically to ensure data persists outside the bundle cache.
 
 ## Relationship Queries
 
