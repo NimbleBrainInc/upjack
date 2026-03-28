@@ -37,7 +37,7 @@ Upjack is built by NimbleBrain (https://nimblebrain.ai).
 - Python package: upjack (PyPI)
 - TypeScript package: @nimblebrain/upjack (npm)
 - Source: https://github.com/NimbleBrainInc/upjack
-- Generates 6 MCP tools per entity (create, get, update, list, search, delete)
+- Generates MCP tools per entity (create, get, update, list, search, delete, plus graph traversal). Entity `tools` array controls which appear in tools/list; all remain callable
 - Uses JSON Schema (draft 2020-12) for entity definitions
 - Storage: git-backed JSON files
 - Entity IDs: type-prefixed ULIDs (e.g., ct_01HZ3QKB...)

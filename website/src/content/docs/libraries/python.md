@@ -66,6 +66,10 @@ The workspace root (where entity data is stored) is resolved in this order:
 
 Runners like mpak or NimbleBrain set `UPJACK_ROOT` automatically to ensure data persists outside the bundle cache.
 
+### Tool Visibility
+
+Entity definitions can include a `tools` array to control which operations appear in `tools/list`. All tools remain callable via `tools/call`. See [Manifest Reference: Entity Definition](/reference/manifest/) for options.
+
 ## Relationship Queries
 
 Query the relationship graph to traverse connections between entities. These methods use a reverse index that Upjack maintains automatically at write time.

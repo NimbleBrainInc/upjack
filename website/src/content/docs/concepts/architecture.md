@@ -88,6 +88,7 @@ manifest.json
         query_{plural}_by_relationship, get_related_{entity},
         get_{entity}_composite, log_activity, get_activities
     + context and skill resources
+    (entity `tools` array controls which appear in tools/list)
     |
     v
 [Agent Reasoning]

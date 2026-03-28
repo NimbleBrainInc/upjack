@@ -668,4 +668,23 @@ describe("tool listing filter", () => {
 
     await client.close();
   });
+
+  it("empty tools array lists no entity tools", async () => {
+    const manifestPath = makeManifest(tmpDir, [
+      { name: "session", plural: "sessions", prefix: "ss", tools: [] },
+    ]);
+    const client = await connectClient(manifestPath, workspace);
+    const tools = await client.listTools();
+    const names = new Set(tools.tools.map((t) => t.name));
+
+    // No session tools listed
+    const sessionTools = [...names].filter((n) => n.includes("session"));
+    expect(sessionTools).toEqual([]);
+
+    // But tools are still callable
+    const result = await client.callTool({ name: "create_session", arguments: { data: { name: "Test" } } });
+    expect(result.isError).toBeFalsy();
+
+    await client.close();
+  });
 });

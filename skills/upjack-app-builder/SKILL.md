@@ -241,6 +241,7 @@ Template — adapt properties per entity:
 - Every entity needs: `name`, `schema`, `prefix`. Add `plural` unless singleton
 - Singleton entities: set `"singleton": true`, omit `plural`
 - `index: true` is default for searchable entities. Set `false` for high-volume log-like entities
+- `tools` is optional. When omitted, all tool categories are listed. When specified as an array, only those categories appear in `tools/list` (e.g., `["get", "search"]` for read-only reference data). All tools remain callable via `tools/call` regardless
 
 **Optional manifest sections** — include when appropriate:
 

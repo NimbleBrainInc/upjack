@@ -139,6 +139,36 @@ Every Upjack app must define at least one entity. Each entity definition describ
 
 The `prefix` is prepended to the ULID to form the entity ID: `ld_01HZ3QKBN9YWVJ0RPFA7MT8C5X`. Prefixes must be unique within an app.
 
+#### Tool Visibility
+
+The `tools` array controls which operation categories appear in `tools/list`. When omitted, all tools are listed (default). When specified, only the listed categories are discoverable by the LLM. All tools remain registered and callable via `tools/call` regardless of this setting.
+
+Available categories: `create`, `get`, `update`, `list`, `search`, `delete`, `query_by_relationship`, `get_related`, `get_composite`.
+
+```json
+{
+  "name": "session",
+  "tools": ["get", "search"]
+}
+```
+
+For reference data entities that should be read-only from the LLM's perspective, use `"tools": ["get", "search"]`. For entities that need full CRUD, omit the `tools` field entirely.
+
+To control global utility tool visibility, add `utility_tools` at the upjack extension level (sibling of `entities`):
+
+```json
+{
+  "_meta": {
+    "ai.nimblebrain/upjack": {
+      "entities": [...],
+      "utility_tools": ["rebuild_index"]
+    }
+  }
+}
+```
+
+Available utility tools: `seed_data`, `add_field`, `rebuild_index`. When omitted, all are listed.
+
 ### `skills`
 
 ```json

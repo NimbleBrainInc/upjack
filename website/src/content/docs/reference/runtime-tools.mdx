@@ -8,7 +8,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Overview
 
-The `upjack` library provides 6 entity management operations. When using `create_server()` / `createServer()`, these are automatically registered as 6 MCP tools per entity type (e.g., `create_contact`, `get_contact`, `list_contacts`). When using `UpjackApp` directly, they are available as methods.
+The `upjack` library provides 6 entity management operations. When using `create_server()` / `createServer()`, these are automatically registered as MCP tools per entity type (e.g., `create_contact`, `get_contact`, `list_contacts`). When using `UpjackApp` directly, they are available as methods.
+
+By default, all operations are listed in `tools/list`. To control which tools are discoverable by the LLM, specify a `tools` array on the entity definition in the manifest. Hidden tools remain callable via `tools/call`. See the [Manifest Reference](/reference/manifest/) for configuration.
 
 The operations work on the entity definitions and schemas declared in the app's [upjack manifest](/reference/manifest/). They are the primary interface through which agents (and custom code) interact with entity data.
 

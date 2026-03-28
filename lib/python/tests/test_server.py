@@ -95,6 +95,7 @@ def _make_manifest(
     skills: list[dict] | None = None,
     seed: dict | None = None,
     activities: bool = False,
+    utility_tools: list[str] | None = None,
     display_name: str = "Test App",
 ) -> Path:
     """Create a manifest with schema files on disk."""
@@ -128,6 +129,8 @@ def _make_manifest(
         upjack["seed"] = seed
     if activities:
         upjack["activities"] = True
+    if utility_tools is not None:
+        upjack["utility_tools"] = utility_tools
 
     manifest = {
         "manifest_version": "0.4",
@@ -1650,3 +1653,52 @@ class TestToolListingFilter:
         # bookmark: all CRUD
         assert "create_bookmark" in listed
         assert "delete_bookmark" in listed
+
+    def test_empty_tools_array_lists_nothing(self, tmp_path):
+        """Empty tools array means zero tools listed for that entity."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "session", "plural": "sessions", "prefix": "ss", "tools": []}],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        listed = _run(_list_tool_names(mcp))
+        # Only utility tools should be listed, no entity tools
+        session_tools = {t for t in listed if "session" in t}
+        assert session_tools == set()
+
+        # But tools are still callable
+        result = _run(_call_tool(mcp, "create_session", {"data": {"name": "Test"}}))
+        assert "id" in result
+
+    def test_graph_traversal_categories(self, tmp_path):
+        """Graph traversal tool categories are filterable."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "node", "plural": "nodes", "prefix": "nd", "tools": ["get", "query_by_relationship", "get_composite"]}],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        listed = _run(_list_tool_names(mcp))
+        assert "get_node" in listed
+        assert "query_nodes_by_relationship" in listed
+        assert "get_node_composite" in listed
+        # CRUD tools not listed
+        assert "create_node" not in listed
+        assert "list_nodes" not in listed
+        # get_related not requested
+        assert "get_related_node" not in listed
+
+    def test_utility_tools_filter(self, tmp_path):
+        """utility_tools array filters global utility tools."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "widget", "plural": "widgets", "prefix": "wg", "tools": ["get"]}],
+            utility_tools=["rebuild_index"],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        listed = _run(_list_tool_names(mcp))
+        assert "rebuild_index" in listed
+        assert "seed_data" not in listed
+        assert "add_field" not in listed
