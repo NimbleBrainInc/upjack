@@ -37,7 +37,9 @@ class UpjackApp:
         self._prefix_map = {e["prefix"]: e["name"] for e in entities}
 
     @classmethod
-    def from_manifest(cls, manifest_path: str | Path, root: str | Path | None = None) -> "UpjackApp":
+    def from_manifest(
+        cls, manifest_path: str | Path, root: str | Path | None = None
+    ) -> "UpjackApp":
         """Load a UpjackApp from a MCPB manifest.json.
 
         Reads the manifest, extracts the upjack extension from

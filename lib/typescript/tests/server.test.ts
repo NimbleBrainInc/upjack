@@ -626,7 +626,10 @@ describe("tool listing filter", () => {
     expect(names).toEqual(new Set(["get_session", "search_sessions"]));
 
     // Hidden tools are still callable
-    const result = await client.callTool({ name: "create_session", arguments: { data: { name: "Test" } } });
+    const result = await client.callTool({
+      name: "create_session",
+      arguments: { data: { name: "Test" } },
+    });
     expect(result.isError).toBeFalsy();
 
     await client.close();
@@ -642,8 +645,12 @@ describe("tool listing filter", () => {
 
     expect(names).toEqual(
       new Set([
-        "create_widget", "get_widget", "update_widget",
-        "list_widgets", "search_widgets", "delete_widget",
+        "create_widget",
+        "get_widget",
+        "update_widget",
+        "list_widgets",
+        "search_widgets",
+        "delete_widget",
       ]),
     );
     await client.close();
@@ -682,7 +689,10 @@ describe("tool listing filter", () => {
     expect(sessionTools).toEqual([]);
 
     // But tools are still callable
-    const result = await client.callTool({ name: "create_session", arguments: { data: { name: "Test" } } });
+    const result = await client.callTool({
+      name: "create_session",
+      arguments: { data: { name: "Test" } },
+    });
     expect(result.isError).toBeFalsy();
 
     await client.close();

@@ -1630,8 +1630,12 @@ class TestToolListingFilter:
 
         listed = _run(_list_tool_names(mcp))
         for expected in [
-            "create_widget", "get_widget", "update_widget",
-            "list_widgets", "search_widgets", "delete_widget",
+            "create_widget",
+            "get_widget",
+            "update_widget",
+            "list_widgets",
+            "search_widgets",
+            "delete_widget",
         ]:
             assert expected in listed
 
@@ -1675,7 +1679,14 @@ class TestToolListingFilter:
         """Graph traversal tool categories are filterable."""
         manifest_path = _make_manifest(
             tmp_path,
-            [{"name": "node", "plural": "nodes", "prefix": "nd", "tools": ["get", "query_by_relationship", "get_composite"]}],
+            [
+                {
+                    "name": "node",
+                    "plural": "nodes",
+                    "prefix": "nd",
+                    "tools": ["get", "query_by_relationship", "get_composite"],
+                }
+            ],
         )
         mcp = create_server(manifest_path, root=tmp_path)
 

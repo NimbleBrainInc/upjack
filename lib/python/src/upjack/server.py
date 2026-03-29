@@ -149,9 +149,11 @@ def _resolve_listed_tools(
     tools: list[str] | None,
 ) -> set[str]:
     """Map tool category names to actual tool names for an entity."""
-    categories = _CATEGORY_TO_TOOL if tools is None else {
-        k: v for k, v in _CATEGORY_TO_TOOL.items() if k in tools
-    }
+    categories = (
+        _CATEGORY_TO_TOOL
+        if tools is None
+        else {k: v for k, v in _CATEGORY_TO_TOOL.items() if k in tools}
+    )
     return {tmpl.format(name=name, plural=plural) for tmpl in categories.values()}
 
 
@@ -812,9 +814,10 @@ def create_server(manifest_path: str | Path, root: str | Path | None = None) -> 
     _register_resources(mcp, manifest_dir, upjack)
 
     # Apply tool listing filter if any entity specifies a tools array
-    has_filter = any(
-        e.get("tools") is not None for e in upjack.get("entities", [])
-    ) or upjack.get("utility_tools") is not None
+    has_filter = (
+        any(e.get("tools") is not None for e in upjack.get("entities", []))
+        or upjack.get("utility_tools") is not None
+    )
 
     if has_filter:
         listed_tools: set[str] = set()
