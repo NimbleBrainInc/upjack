@@ -329,7 +329,9 @@ export function createServer(manifestPath: string, root?: string): Server {
     const { definitions, handlers } = buildEntityTools(app, entityDef, schema);
     Object.assign(allHandlers, handlers);
 
-    const toolsFilter = (entityDef as unknown as Record<string, unknown>).tools as string[] | undefined;
+    const toolsFilter = (entityDef as unknown as Record<string, unknown>).tools as
+      | string[]
+      | undefined;
     if (toolsFilter) {
       const listed = resolveListedTools(entityDef.name, entityDef.plural, toolsFilter);
       listedDefinitions.push(...definitions.filter((d) => listed.has(d.name)));

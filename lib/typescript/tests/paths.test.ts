@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { entityDir, entityPath, resolveRoot, schemaDir } from "../src/paths.js";
@@ -75,6 +75,7 @@ describe("resolveRoot", () => {
     if (originalEnv !== undefined) {
       process.env.UPJACK_ROOT = originalEnv;
     } else {
+      // biome-ignore lint/performance/noDelete: env var cleanup requires delete
       delete process.env.UPJACK_ROOT;
     }
   });
@@ -85,11 +86,13 @@ describe("resolveRoot", () => {
   });
 
   it("uses cliRoot when no env var", () => {
+    // biome-ignore lint/performance/noDelete: env var cleanup requires delete
     delete process.env.UPJACK_ROOT;
     expect(resolveRoot("/explicit")).toBe(resolve("/explicit"));
   });
 
   it("falls back to .upjack", () => {
+    // biome-ignore lint/performance/noDelete: env var cleanup requires delete
     delete process.env.UPJACK_ROOT;
     expect(resolveRoot()).toBe(resolve(".upjack"));
   });

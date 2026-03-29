@@ -1,10 +1,10 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UpjackApp } from "../src/app.js";
 import { validateId } from "../src/ids.js";
-import { existsSync } from "node:fs";
 
 const NAMESPACE = "apps/crm";
 const ENTITIES = [

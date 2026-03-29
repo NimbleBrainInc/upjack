@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- AJV CJS interop
-import Ajv2020Module from "ajv/dist/2020.js";
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- ajv-formats CJS interop
 import addFormatsModule from "ajv-formats";
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- AJV CJS interop
+import Ajv2020Module from "ajv/dist/2020.js";
 
 // CJS default export interop
 const Ajv2020 =
