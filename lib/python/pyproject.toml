@@ -1,6 +1,6 @@
 [project]
 name = "upjack"
-version = "0.4.0"
+version = "0.4.1"
 description = "Schema-driven entity management for AI-native applications"
 readme = "README.md"
 license = {text = "Apache-2.0"}
