@@ -60,7 +60,7 @@ Global tools:
 
 ## Verification
 
-**Always run before considering work done:**
+**Always run `make check` before considering work done.** Do NOT shortcut with individual targets like `lint` or `typecheck` — CI runs format checks that `lint` alone misses (import sorting, line length).
 
 ```bash
 make check    # from repo root — validates schemas + runs Python + TS tests
@@ -69,8 +69,8 @@ make check    # from repo root — validates schemas + runs Python + TS tests
 For a single library:
 
 ```bash
-make -C lib/python check       # format + lint + typecheck + tests
-make -C lib/typescript check   # format + lint + typecheck + tests
+make -C lib/python check       # format-check + lint + typecheck + tests
+make -C lib/typescript check   # format-check + lint + typecheck + tests
 make -C schemas validate       # bundle + AJV validation
 ```
 
