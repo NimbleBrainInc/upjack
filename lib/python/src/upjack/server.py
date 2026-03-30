@@ -40,7 +40,6 @@ _BASE_ENTITY_KEYS = frozenset(
         "status",
         "tags",
         "source",
-        "relationships",
     }
 )
 
