@@ -1700,6 +1700,30 @@ class TestToolListingFilter:
         # get_related not requested
         assert "get_related_node" not in listed
 
+    def test_custom_tools_pass_through_filter(self, tmp_path):
+        """Custom tools registered after create_server() survive the filter."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "deal", "plural": "deals", "prefix": "dl", "tools": ["get", "list"]}],
+        )
+        mcp = create_server(manifest_path, root=tmp_path)
+
+        # Register a custom tool after create_server (simulates app server.py)
+        @mcp.tool()
+        def move_deal_stage(deal_id: str, stage: str) -> dict:
+            """Move a deal to a new pipeline stage."""
+            return {"deal_id": deal_id, "stage": stage}
+
+        listed = _run(_list_tool_names(mcp))
+        # Custom tool should be listed
+        assert "move_deal_stage" in listed
+        # Filtered auto-generated tools should still be hidden
+        assert "create_deal" not in listed
+        assert "delete_deal" not in listed
+        # Allowed auto-generated tools should be listed
+        assert "get_deal" in listed
+        assert "list_deals" in listed
+
     def test_utility_tools_filter(self, tmp_path):
         """utility_tools array filters global utility tools."""
         manifest_path = _make_manifest(
