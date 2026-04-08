@@ -846,7 +846,7 @@ def create_server(manifest_path: str | Path, root: str | Path | None = None) -> 
             if upjack.get("activities"):
                 all_auto.update(_resolve_listed_tools("activity", "activities", None))
                 all_auto.update({"log_activity", "get_activities"})
-            all_auto.update({"seed_data", "add_field", "rebuild_index"})
+            all_auto.update(_ALL_UTILITY_TOOLS)
 
             return [
                 t
