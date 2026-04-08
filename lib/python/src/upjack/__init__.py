@@ -1,6 +1,6 @@
 """NimbleBrain Upjack — schema-driven entity management for AI-native applications."""
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 from upjack.activity import ACTIVITY_ENTITY_DEF, get_activity_schema
 from upjack.app import UpjackApp
