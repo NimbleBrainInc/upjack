@@ -7,6 +7,8 @@ import jsonschema
 import pytest
 
 from upjack.schema import (
+    build_entity_output_schema,
+    build_list_output_schema,
     hydrate_defaults,
     load_schema,
     resolve_entity_schema,
@@ -348,3 +350,68 @@ class TestRequiredWithoutDefaultWarning:
             validate_entity(data, schema)
         warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warning_records) == 0
+
+
+class TestBuildEntityOutputSchema:
+    """Tests for build_entity_output_schema — output schema for single-entity tools."""
+
+    def test_adds_type_object_to_allof_schema(self):
+        """allOf-composed schemas (from resolve_entity_schema) lack top-level type."""
+        base = {"type": "object", "properties": {"id": {"type": "string"}}}
+        app = {"type": "object", "properties": {"name": {"type": "string"}}}
+        composed = resolve_entity_schema(base, app)
+        # Composed schema has allOf but no top-level type
+        assert "type" not in composed
+        assert "allOf" in composed
+
+        result = build_entity_output_schema(composed)
+        assert result["type"] == "object"
+        assert result["allOf"] == [base, app]
+
+    def test_preserves_existing_type(self):
+        """Schemas that already declare type should not be overwritten."""
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        result = build_entity_output_schema(schema)
+        assert result["type"] == "object"
+
+    def test_strips_schema_and_id(self):
+        """$schema and $id are removed from output schemas."""
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/widget",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+        }
+        result = build_entity_output_schema(schema)
+        assert "$schema" not in result
+        assert "$id" not in result
+
+    def test_deep_copies_input(self):
+        """Mutations to the result should not affect the input."""
+        schema = {"allOf": [{"type": "object"}]}
+        result = build_entity_output_schema(schema)
+        result["extra"] = True
+        assert "extra" not in schema
+
+
+class TestBuildListOutputSchema:
+    """Tests for build_list_output_schema — envelope schema for list/search tools."""
+
+    def test_returns_object_with_entities_and_count(self):
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        result = build_list_output_schema(schema)
+        assert result["type"] == "object"
+        assert "entities" in result["properties"]
+        assert result["properties"]["entities"]["type"] == "array"
+        assert "count" in result["properties"]
+        assert result["required"] == ["entities", "count"]
+
+    def test_items_schema_has_type_object(self):
+        """The array items schema should also have type: object (via build_entity_output_schema)."""
+        composed = resolve_entity_schema(
+            {"type": "object", "properties": {"id": {"type": "string"}}},
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+        )
+        result = build_list_output_schema(composed)
+        items = result["properties"]["entities"]["items"]
+        assert items["type"] == "object"

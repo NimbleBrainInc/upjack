@@ -219,10 +219,14 @@ def build_entity_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
     Returns the full entity schema (including base fields) with JSON Schema
     meta keywords stripped, suitable for use as a tool's ``outputSchema``.
+    MCP requires ``type: "object"`` on every outputSchema.
     """
     result = copy.deepcopy(schema)
     result.pop("$schema", None)
     result.pop("$id", None)
+    # MCP spec requires outputSchema to have type: "object"
+    if "type" not in result:
+        result["type"] = "object"
     return result
 
 

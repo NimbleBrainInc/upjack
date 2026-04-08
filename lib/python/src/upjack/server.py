@@ -812,7 +812,9 @@ def create_server(manifest_path: str | Path, root: str | Path | None = None) -> 
     # Register resources
     _register_resources(mcp, manifest_dir, upjack)
 
-    # Apply tool listing filter if any entity specifies a tools array
+    # Apply tool listing filter if any entity specifies a tools array.
+    # The filter hides auto-generated tools not in the allowlist but always
+    # passes through custom tools registered after create_server() returns.
     has_filter = (
         any(e.get("tools") is not None for e in upjack.get("entities", []))
         or upjack.get("utility_tools") is not None
@@ -833,7 +835,25 @@ def create_server(manifest_path: str | Path, root: str | Path | None = None) -> 
 
         async def _filtered_list_tools():
             all_tools = await _original_list_tools()
-            return [t for t in all_tools if t.name in listed_tools]
+            # Collect the full set of auto-generated names (listed + unlisted)
+            all_auto = set()
+            for entity_def in upjack.get("entities", []):
+                ename = entity_def["name"]
+                eplural = entity_def.get("plural", ename + "s")
+                all_auto.update(
+                    _resolve_listed_tools(ename, eplural, None)  # None = all categories
+                )
+            if upjack.get("activities"):
+                all_auto.update(_resolve_listed_tools("activity", "activities", None))
+                all_auto.update({"log_activity", "get_activities"})
+            all_auto.update({"seed_data", "add_field", "rebuild_index"})
+
+            return [
+                t
+                for t in all_tools
+                if t.name in listed_tools  # explicitly allowed auto-generated
+                or t.name not in all_auto  # custom tool (not auto-generated)
+            ]
 
         mcp._list_tools = _filtered_list_tools  # type: ignore[assignment]
 
