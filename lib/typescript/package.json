@@ -1,6 +1,6 @@
 {
   "name": "upjack",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Schema-driven entity management for AI-native applications",
   "type": "module",
   "exports": {
