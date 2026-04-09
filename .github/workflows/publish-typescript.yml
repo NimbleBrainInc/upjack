@@ -70,4 +70,4 @@ jobs:
 
       - name: Publish to npm
         working-directory: lib/typescript
-        run: npm publish --provenance --access public
+        run: npx npm@latest publish --provenance --access public
