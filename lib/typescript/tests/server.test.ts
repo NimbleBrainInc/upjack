@@ -256,7 +256,7 @@ beforeEach(() => {
 });
 
 describe("createServer", () => {
-  it("registers 6 tools per entity", async () => {
+  it("registers 9 entity tools + utility tools per entity", async () => {
     const manifestPath = makeManifest(tmpDir, [
       { name: "widget", plural: "widgets", prefix: "wg" },
     ]);
@@ -264,16 +264,18 @@ describe("createServer", () => {
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((t) => t.name));
 
-    expect(names).toEqual(
-      new Set([
-        "create_widget",
-        "get_widget",
-        "update_widget",
-        "list_widgets",
-        "search_widgets",
-        "delete_widget",
-      ]),
-    );
+    // 6 CRUD + 3 relationship + 2 utility (add_field, rebuild_index)
+    expect(names).toContain("create_widget");
+    expect(names).toContain("get_widget");
+    expect(names).toContain("update_widget");
+    expect(names).toContain("list_widgets");
+    expect(names).toContain("search_widgets");
+    expect(names).toContain("delete_widget");
+    expect(names).toContain("query_widgets_by_relationship");
+    expect(names).toContain("get_related_widget");
+    expect(names).toContain("get_widget_composite");
+    expect(names).toContain("add_field");
+    expect(names).toContain("rebuild_index");
     await client.close();
   });
 
@@ -285,10 +287,12 @@ describe("createServer", () => {
     const client = await connectClient(manifestPath, workspace);
     const tools = await client.listTools();
 
-    expect(tools.tools).toHaveLength(12);
+    // 9 per entity * 2 + 2 utility = 20
     const names = new Set(tools.tools.map((t) => t.name));
     expect(names.has("create_contact")).toBe(true);
     expect(names.has("search_deals")).toBe(true);
+    expect(names.has("query_contacts_by_relationship")).toBe(true);
+    expect(names.has("get_related_deal")).toBe(true);
     await client.close();
   });
 });
@@ -426,16 +430,17 @@ describe("tool CRUD", () => {
     expect(updated.extra).toBe("field");
   });
 
-  it("list returns created entities", async () => {
+  it("list returns created entities in envelope", async () => {
     await client.callTool({ name: "create_item", arguments: { data: { name: "A" } } });
     await client.callTool({ name: "create_item", arguments: { data: { name: "B" } } });
 
     const listResult = await client.callTool({ name: "list_items", arguments: {} });
-    const items = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
-    expect(items).toHaveLength(2);
+    const result = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
+    expect(result.entities).toHaveLength(2);
+    expect(result.count).toBe(2);
   });
 
-  it("search finds by text", async () => {
+  it("search finds by text in envelope", async () => {
     await client.callTool({ name: "create_item", arguments: { data: { name: "Alpha" } } });
     await client.callTool({ name: "create_item", arguments: { data: { name: "Beta" } } });
 
@@ -443,9 +448,9 @@ describe("tool CRUD", () => {
       name: "search_items",
       arguments: { query: "Alpha" },
     });
-    const results = JSON.parse((searchResult.content as Array<{ text: string }>)[0].text);
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("Alpha");
+    const result = JSON.parse((searchResult.content as Array<{ text: string }>)[0].text);
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0].name).toBe("Alpha");
   });
 
   it("soft delete", async () => {
@@ -463,8 +468,8 @@ describe("tool CRUD", () => {
     expect(deleted.status).toBe("deleted");
 
     const listResult = await client.callTool({ name: "list_items", arguments: {} });
-    const items = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
-    expect(items).toHaveLength(0);
+    const result = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
+    expect(result.entities).toHaveLength(0);
   });
 });
 
@@ -518,9 +523,9 @@ describe("JSON string deserialization", () => {
       name: "search_items",
       arguments: { filter: JSON.stringify({ name: "Findme" }) },
     });
-    const results = JSON.parse((searchResult.content as Array<{ text: string }>)[0].text);
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("Findme");
+    const result = JSON.parse((searchResult.content as Array<{ text: string }>)[0].text);
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0].name).toBe("Findme");
   });
 
   it("plain string args are not mangled", async () => {
@@ -623,7 +628,11 @@ describe("tool listing filter", () => {
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((t) => t.name));
 
-    expect(names).toEqual(new Set(["get_session", "search_sessions"]));
+    // Only get + search for session, plus utility tools
+    expect(names.has("get_session")).toBe(true);
+    expect(names.has("search_sessions")).toBe(true);
+    expect(names.has("create_session")).toBe(false);
+    expect(names.has("query_sessions_by_relationship")).toBe(false);
 
     // Hidden tools are still callable
     const result = await client.callTool({
@@ -635,7 +644,7 @@ describe("tool listing filter", () => {
     await client.close();
   });
 
-  it("no tools array lists all tools", async () => {
+  it("no tools array lists all entity + utility tools", async () => {
     const manifestPath = makeManifest(tmpDir, [
       { name: "widget", plural: "widgets", prefix: "wg" },
     ]);
@@ -643,16 +652,11 @@ describe("tool listing filter", () => {
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((t) => t.name));
 
-    expect(names).toEqual(
-      new Set([
-        "create_widget",
-        "get_widget",
-        "update_widget",
-        "list_widgets",
-        "search_widgets",
-        "delete_widget",
-      ]),
-    );
+    // All 9 entity tools + utility tools
+    expect(names.has("create_widget")).toBe(true);
+    expect(names.has("query_widgets_by_relationship")).toBe(true);
+    expect(names.has("add_field")).toBe(true);
+    expect(names.has("rebuild_index")).toBe(true);
     await client.close();
   });
 

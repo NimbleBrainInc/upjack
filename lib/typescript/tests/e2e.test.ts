@@ -506,7 +506,8 @@ describe("CRM Server E2E", () => {
       expect(names.has(`search_${plural}`)).toBe(true);
       expect(names.has(`delete_${name}`)).toBe(true);
     }
-    expect(tools.tools).toHaveLength(30);
+    // 5 entities × 9 tools + 3 utility = 48
+    expect(tools.tools).toHaveLength(48);
   });
 
   it("registers context and skill resources", async () => {
@@ -563,8 +564,8 @@ describe("Research Server E2E", () => {
       expect(names.has(`create_${name}`)).toBe(true);
       expect(names.has(`list_${plural}`)).toBe(true);
     }
-    // 4 entities × 6 tools = 24
-    expect(tools.tools).toHaveLength(24);
+    // 4 entities × 9 tools + 3 utility = 39
+    expect(tools.tools).toHaveLength(39);
   });
 });
 
@@ -599,7 +600,8 @@ describe("Todo Server E2E", () => {
       expect(names.has(`search_${plural}`)).toBe(true);
       expect(names.has(`delete_${name}`)).toBe(true);
     }
-    expect(tools.tools).toHaveLength(18);
+    // 3 entities × 9 tools + 3 utility = 30
+    expect(tools.tools).toHaveLength(30);
   });
 
   it("registers context and skill resources", async () => {
@@ -648,18 +650,21 @@ describe("Todo Server E2E", () => {
 
     // List
     const listResult = await client.callTool({ name: "list_tasks", arguments: {} });
-    const items = JSON.parse((listResult.content as Array<{ text: string }>)[0].text) as unknown[];
-    expect(items).toHaveLength(1);
+    const listData = JSON.parse((listResult.content as Array<{ text: string }>)[0].text) as Record<
+      string,
+      unknown
+    >;
+    expect((listData.entities as unknown[]).length).toBe(1);
 
     // Search
     const searchResult = await client.callTool({
       name: "search_tasks",
       arguments: { query: "Test" },
     });
-    const results = JSON.parse(
+    const searchData = JSON.parse(
       (searchResult.content as Array<{ text: string }>)[0].text,
-    ) as unknown[];
-    expect(results).toHaveLength(1);
+    ) as Record<string, unknown>;
+    expect((searchData.entities as unknown[]).length).toBe(1);
 
     // Delete
     const deleteResult = await client.callTool({
@@ -671,10 +676,11 @@ describe("Todo Server E2E", () => {
 
     // Verify excluded from list
     const finalList = await client.callTool({ name: "list_tasks", arguments: {} });
-    const finalItems = JSON.parse(
-      (finalList.content as Array<{ text: string }>)[0].text,
-    ) as unknown[];
-    expect(finalItems).toHaveLength(0);
+    const finalData = JSON.parse((finalList.content as Array<{ text: string }>)[0].text) as Record<
+      string,
+      unknown
+    >;
+    expect((finalData.entities as unknown[]).length).toBe(0);
   });
 });
 
