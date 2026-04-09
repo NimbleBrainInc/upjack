@@ -234,3 +234,164 @@ describe("deleteEntity", () => {
     ).toThrow("Entity not found");
   });
 });
+
+const HYDRATION_SCHEMA: Record<string, unknown> = {
+  allOf: [
+    { $ref: "https://upjack.dev/schemas/v1/upjack-entity.schema.json" },
+    {
+      type: "object",
+      properties: {
+        first_name: { type: "string" },
+        priority: { type: "string", default: "medium" },
+      },
+    },
+  ],
+};
+
+describe("getEntity with schema hydration", () => {
+  it("hydrates missing field from schema default", () => {
+    const created = createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", {
+      first_name: "Sarah",
+    });
+    const entity = getEntity(workspace, NAMESPACE, "contacts", created.id, HYDRATION_SCHEMA);
+    expect(entity.priority).toBe("medium");
+    expect(entity.first_name).toBe("Sarah");
+  });
+
+  it("works without schema (returns raw entity)", () => {
+    const created = createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", {
+      first_name: "Sarah",
+    });
+    const entity = getEntity(workspace, NAMESPACE, "contacts", created.id);
+    expect(entity.priority).toBeUndefined();
+  });
+});
+
+describe("listEntities with schema hydration", () => {
+  it("hydrates all entities in list", () => {
+    createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", { first_name: "A" });
+    createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", { first_name: "B" });
+    const entities = listEntities(workspace, NAMESPACE, "contacts", "active", 50, HYDRATION_SCHEMA);
+    expect(entities).toHaveLength(2);
+    for (const e of entities) {
+      expect(e.priority).toBe("medium");
+    }
+  });
+});
+
+describe("createEntity with callback", () => {
+  it("fires callback when entity has relationships", () => {
+    const calls: Array<{ id: string; oldRels: unknown[]; newRels: unknown[] }> = [];
+    const cb = (id: string, oldRels: unknown[], newRels: unknown[]) => {
+      calls.push({ id, oldRels, newRels });
+    };
+    const created = createEntity(
+      workspace,
+      NAMESPACE,
+      "contact",
+      "contacts",
+      "ct",
+      { first_name: "Sarah", relationships: [{ rel: "works_at", target: "co_01FAKE" }] },
+      undefined,
+      1,
+      "agent",
+      cb,
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].id).toBe(created.id);
+    expect(calls[0].oldRels).toEqual([]);
+    expect(calls[0].newRels).toHaveLength(1);
+  });
+
+  it("does not fire callback when no relationships", () => {
+    const calls: unknown[] = [];
+    createEntity(
+      workspace,
+      NAMESPACE,
+      "contact",
+      "contacts",
+      "ct",
+      { first_name: "Sarah" },
+      undefined,
+      1,
+      "agent",
+      () => {
+        calls.push(1);
+      },
+    );
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("updateEntity with callback", () => {
+  it("fires callback when relationships change", () => {
+    const created = createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", {
+      first_name: "Sarah",
+    });
+    const calls: Array<{ oldRels: unknown[]; newRels: unknown[] }> = [];
+    updateEntity(
+      workspace,
+      NAMESPACE,
+      "contacts",
+      created.id,
+      { relationships: [{ rel: "works_at", target: "co_01FAKE" }] },
+      undefined,
+      true,
+      (_id, oldRels, newRels) => {
+        calls.push({ oldRels, newRels });
+      },
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].oldRels).toEqual([]);
+    expect(calls[0].newRels).toHaveLength(1);
+  });
+
+  it("does not fire callback when relationships unchanged", () => {
+    const created = createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", {
+      first_name: "Sarah",
+      relationships: [{ rel: "works_at", target: "co_01FAKE" }],
+    });
+    const calls: unknown[] = [];
+    updateEntity(
+      workspace,
+      NAMESPACE,
+      "contacts",
+      created.id,
+      { first_name: "Sarah Updated" },
+      undefined,
+      true,
+      () => {
+        calls.push(1);
+      },
+    );
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("deleteEntity with callback", () => {
+  it("fires callback on hard delete with relationships", () => {
+    const created = createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", {
+      first_name: "Sarah",
+      relationships: [{ rel: "works_at", target: "co_01FAKE" }],
+    });
+    const calls: Array<{ oldRels: unknown[]; newRels: unknown[] }> = [];
+    deleteEntity(workspace, NAMESPACE, "contacts", created.id, true, (_id, oldRels, newRels) => {
+      calls.push({ oldRels, newRels });
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].oldRels).toHaveLength(1);
+    expect(calls[0].newRels).toEqual([]);
+  });
+
+  it("does not fire callback on soft delete", () => {
+    const created = createEntity(workspace, NAMESPACE, "contact", "contacts", "ct", {
+      first_name: "Sarah",
+      relationships: [{ rel: "works_at", target: "co_01FAKE" }],
+    });
+    const calls: unknown[] = [];
+    deleteEntity(workspace, NAMESPACE, "contacts", created.id, false, () => {
+      calls.push(1);
+    });
+    expect(calls).toHaveLength(0);
+  });
+});

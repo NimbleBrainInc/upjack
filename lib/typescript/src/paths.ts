@@ -63,3 +63,29 @@ export function schemaDir(root: string, namespace: string): string {
   const target = `${root}/${namespace}/schemas`;
   return checkWithinRoot(root, target);
 }
+
+/**
+ * Get the directory path for the relationship index.
+ *
+ * @param root - Workspace root directory.
+ * @param namespace - App namespace (e.g., 'apps/crm').
+ * @returns Path to the index directory.
+ * @throws Error if the resolved path escapes the workspace root.
+ */
+export function indexDir(root: string, namespace: string): string {
+  const target = `${root}/${namespace}/data/_index`;
+  return checkWithinRoot(root, target);
+}
+
+/**
+ * Get the file path for the relationship index.
+ *
+ * @param root - Workspace root directory.
+ * @param namespace - App namespace (e.g., 'apps/crm').
+ * @returns Path to the relations.json index file.
+ * @throws Error if the resolved path escapes the workspace root.
+ */
+export function indexPath(root: string, namespace: string): string {
+  const target = `${root}/${namespace}/data/_index/relations.json`;
+  return checkWithinRoot(root, target);
+}

@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { entityDir, entityPath, resolveRoot, schemaDir } from "../src/paths.js";
+import {
+  entityDir,
+  entityPath,
+  indexDir,
+  indexPath,
+  resolveRoot,
+  schemaDir,
+} from "../src/paths.js";
 
 describe("schemaDir", () => {
   it("returns correct path", () => {
@@ -65,6 +72,42 @@ describe("path traversal", () => {
 
     const dir = entityDir(workspace, "apps/crm", "contacts");
     expect(dir).toBe(`${workspace}/apps/crm/data/contacts`);
+  });
+});
+
+describe("indexDir", () => {
+  it("returns correct path", () => {
+    const result = indexDir("/workspace", "apps/crm");
+    expect(result).toBe("/workspace/apps/crm/data/_index");
+  });
+
+  it("rejects namespace with traversal", () => {
+    const root = mkdtempSync(join(tmpdir(), "upjack-"));
+    mkdirSync(join(root, "workspace"), { recursive: true });
+    const workspace = join(root, "workspace");
+
+    expect(() => indexDir(workspace, "../../etc")).toThrow("Path escapes workspace root");
+  });
+});
+
+describe("indexPath", () => {
+  it("returns correct path", () => {
+    const result = indexPath("/workspace", "apps/crm");
+    expect(result).toBe("/workspace/apps/crm/data/_index/relations.json");
+  });
+
+  it("rejects namespace with traversal", () => {
+    const root = mkdtempSync(join(tmpdir(), "upjack-"));
+    mkdirSync(join(root, "workspace"), { recursive: true });
+    const workspace = join(root, "workspace");
+
+    expect(() => indexPath(workspace, "../../etc")).toThrow("Path escapes workspace root");
+  });
+
+  it("indexPath is child of indexDir", () => {
+    const dir = indexDir("/ws", "apps/crm");
+    const path = indexPath("/ws", "apps/crm");
+    expect(path).toBe(`${dir}/relations.json`);
   });
 });
 

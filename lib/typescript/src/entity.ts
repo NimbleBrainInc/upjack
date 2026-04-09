@@ -7,9 +7,22 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { generateId } from "./ids.js";
+import { generateId, validateId } from "./ids.js";
 import { entityDir, entityPath } from "./paths.js";
-import { validateEntity } from "./schema.js";
+import { hydrateDefaults, validateEntity } from "./schema.js";
+
+export interface Relationship {
+  rel: string;
+  target: string;
+  label?: string;
+  [key: string]: string | undefined;
+}
+
+export type RelationshipsChangedCallback = (
+  entityId: string,
+  oldRels: Relationship[],
+  newRels: Relationship[],
+) => void;
 
 /** Base fields present on every entity record. */
 export interface EntityRecord {
@@ -22,7 +35,7 @@ export interface EntityRecord {
   status: string;
   tags: string[];
   source?: Record<string, string>;
-  relationships: Array<{ rel: string; target: string; label?: string }>;
+  relationships: Relationship[];
   [key: string]: unknown;
 }
 
@@ -52,10 +65,20 @@ export function createEntity(
   schema?: Record<string, unknown>,
   schemaVersion = 1,
   createdBy = "agent",
+  onRelationshipsChanged?: RelationshipsChangedCallback,
 ): EntityRecord {
   const now = nowIso();
-  const entityId = generateId(prefix);
-  const { tags: rawTags, relationships: rawRelationships, source: rawSource, ...appData } = data;
+  const {
+    id: providedId,
+    tags: rawTags,
+    relationships: rawRelationships,
+    source: rawSource,
+    ...appData
+  } = data;
+  const entityId =
+    typeof providedId === "string" && validateId(providedId) && providedId.startsWith(`${prefix}_`)
+      ? providedId
+      : generateId(prefix);
   const tags = (rawTags as string[]) ?? [];
   const relationships = (rawRelationships as EntityRecord["relationships"]) ?? [];
   const source = rawSource as Record<string, string> | undefined;
@@ -85,6 +108,10 @@ export function createEntity(
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
 
+  if (onRelationshipsChanged && record.relationships.length > 0) {
+    onRelationshipsChanged(entityId, [], record.relationships);
+  }
+
   return record;
 }
 
@@ -99,6 +126,7 @@ export function updateEntity(
   data: Record<string, unknown>,
   schema?: Record<string, unknown>,
   merge = true,
+  onRelationshipsChanged?: RelationshipsChangedCallback,
 ): EntityRecord {
   const path = entityPath(root, namespace, plural, entityId);
   if (!existsSync(path)) {
@@ -106,6 +134,13 @@ export function updateEntity(
   }
 
   let existing = JSON.parse(readFileSync(path, "utf-8")) as EntityRecord;
+  const oldRelationships = JSON.stringify(existing.relationships ?? []);
+
+  // Hydrate defaults before merge so old entities missing new fields
+  // get filled in — prevents validation failures on schema evolution.
+  if (schema) {
+    existing = hydrateDefaults(existing, schema) as EntityRecord;
+  }
 
   // Strip immutable fields
   const immutable = new Set(["id", "type", "version", "created_at", "created_by"]);
@@ -135,6 +170,14 @@ export function updateEntity(
   }
 
   writeFileSync(path, `${JSON.stringify(existing, null, 2)}\n`);
+
+  if (onRelationshipsChanged) {
+    const newRelationships = JSON.stringify(existing.relationships ?? []);
+    if (oldRelationships !== newRelationships) {
+      onRelationshipsChanged(entityId, JSON.parse(oldRelationships), existing.relationships ?? []);
+    }
+  }
+
   return existing;
 }
 
@@ -146,12 +189,17 @@ export function getEntity(
   namespace: string,
   plural: string,
   entityId: string,
+  schema?: Record<string, unknown>,
 ): EntityRecord {
   const path = entityPath(root, namespace, plural, entityId);
   if (!existsSync(path)) {
     throw new Error(`Entity not found: ${entityId}`);
   }
-  return JSON.parse(readFileSync(path, "utf-8"));
+  const entity = JSON.parse(readFileSync(path, "utf-8")) as EntityRecord;
+  if (schema) {
+    return hydrateDefaults(entity, schema) as EntityRecord;
+  }
+  return entity;
 }
 
 /**
@@ -163,6 +211,7 @@ export function listEntities(
   plural: string,
   status = "active",
   limit = 50,
+  schema?: Record<string, unknown>,
 ): EntityRecord[] {
   const directory = entityDir(root, namespace, plural);
   if (!existsSync(directory)) {
@@ -173,8 +222,11 @@ export function listEntities(
   for (const file of readdirSync(directory)) {
     if (!file.endsWith(".json")) continue;
     try {
-      const entity = JSON.parse(readFileSync(join(directory, file), "utf-8")) as EntityRecord;
+      let entity = JSON.parse(readFileSync(join(directory, file), "utf-8")) as EntityRecord;
       if ((entity.status ?? "active") === status) {
+        if (schema) {
+          entity = hydrateDefaults(entity, schema) as EntityRecord;
+        }
         results.push(entity);
       }
     } catch {
@@ -195,6 +247,7 @@ export function deleteEntity(
   plural: string,
   entityId: string,
   hard = false,
+  onRelationshipsChanged?: RelationshipsChangedCallback,
 ): EntityRecord {
   const path = entityPath(root, namespace, plural, entityId);
   if (!existsSync(path)) {
@@ -205,6 +258,9 @@ export function deleteEntity(
 
   if (hard) {
     unlinkSync(path);
+    if (onRelationshipsChanged && entity.relationships?.length > 0) {
+      onRelationshipsChanged(entityId, entity.relationships, []);
+    }
   } else {
     entity.status = "deleted";
     entity.updated_at = nowIso();
