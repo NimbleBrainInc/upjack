@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { generateId } from "./ids.js";
+import { generateId, validateId } from "./ids.js";
 import { entityDir, entityPath } from "./paths.js";
 import { hydrateDefaults, validateEntity } from "./schema.js";
 
@@ -68,8 +68,17 @@ export function createEntity(
   onRelationshipsChanged?: RelationshipsChangedCallback,
 ): EntityRecord {
   const now = nowIso();
-  const entityId = generateId(prefix);
-  const { tags: rawTags, relationships: rawRelationships, source: rawSource, ...appData } = data;
+  const {
+    id: providedId,
+    tags: rawTags,
+    relationships: rawRelationships,
+    source: rawSource,
+    ...appData
+  } = data;
+  const entityId =
+    typeof providedId === "string" && validateId(providedId) && providedId.startsWith(`${prefix}_`)
+      ? providedId
+      : generateId(prefix);
   const tags = (rawTags as string[]) ?? [];
   const relationships = (rawRelationships as EntityRecord["relationships"]) ?? [];
   const source = rawSource as Record<string, string> | undefined;
