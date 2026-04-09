@@ -702,3 +702,140 @@ describe("tool listing filter", () => {
     await client.close();
   });
 });
+
+describe("add_field tool", () => {
+  let client: Awaited<ReturnType<typeof connectClient>>;
+
+  beforeEach(async () => {
+    const manifestPath = makeManifest(tmpDir, [
+      { name: "widget", plural: "widgets", prefix: "wg" },
+    ]);
+    client = await connectClient(manifestPath, workspace);
+  });
+
+  afterEach(async () => {
+    await client.close();
+  });
+
+  it("adds a new field to entity schema", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "priority",
+        field_type: "string",
+        default: "medium",
+        description: "Priority level",
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.field.name).toBe("priority");
+    expect(parsed.field.type).toBe("string");
+    expect(parsed.field.default).toBe("medium");
+  });
+
+  it("new field is usable after add", async () => {
+    await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "color",
+        field_type: "string",
+        default: "blue",
+      },
+    });
+
+    // Create an entity — the new field should be accepted
+    const createResult = await client.callTool({
+      name: "create_widget",
+      arguments: { data: { name: "Test", color: "red" } },
+    });
+    const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
+    expect(created.color).toBe("red");
+  });
+
+  it("rejects invalid field name", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "BadName",
+        field_type: "string",
+        default: "",
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.error).toContain("Invalid field_name");
+  });
+
+  it("rejects reserved field name", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "status",
+        field_type: "string",
+        default: "active",
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.error).toContain("reserved base entity field");
+  });
+
+  it("rejects invalid field type", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "score",
+        field_type: "float",
+        default: 0,
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.error).toContain("Invalid field_type");
+  });
+
+  it("rejects type mismatch between default and field_type", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "count",
+        field_type: "integer",
+        default: "not a number",
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.error).toContain("not compatible with type");
+  });
+
+  it("rejects duplicate field", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "widget",
+        field_name: "name",
+        field_type: "string",
+        default: "",
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.error).toContain("already exists");
+  });
+
+  it("rejects unknown entity type", async () => {
+    const result = await client.callTool({
+      name: "add_field",
+      arguments: {
+        entity_type: "nonexistent",
+        field_name: "foo",
+        field_type: "string",
+        default: "",
+      },
+    });
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(parsed.error).toContain("Unknown entity type");
+  });
+});

@@ -8,7 +8,12 @@ export {
   listEntities,
   deleteEntity,
 } from "./entity.js";
-export type { EntityRecord, EntityDefinition, RelationshipsChangedCallback } from "./entity.js";
+export type {
+  EntityRecord,
+  EntityDefinition,
+  Relationship,
+  RelationshipsChangedCallback,
+} from "./entity.js";
 export { generateId, parseId, validateId } from "./ids.js";
 export { entityDir, entityPath, indexDir, indexPath, resolveRoot, schemaDir } from "./paths.js";
 export {

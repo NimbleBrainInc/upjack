@@ -4,6 +4,7 @@ import { ACTIVITY_ENTITY_DEF, getActivitySchema } from "./activity.js";
 import {
   type EntityDefinition,
   type EntityRecord,
+  type Relationship,
   createEntity,
   deleteEntity,
   getEntity,
@@ -135,8 +136,8 @@ export class UpjackApp {
   /** @internal */
   _onRelationshipsChanged(
     entityId: string,
-    oldRels: Array<Record<string, string>>,
-    newRels: Array<Record<string, string>>,
+    oldRels: Relationship[],
+    newRels: Relationship[],
   ): void {
     updateIndex(this.root, this.namespace, entityId, oldRels, newRels);
   }
@@ -144,8 +145,8 @@ export class UpjackApp {
   /** @internal */
   _onRelationshipsRemoved(
     entityId: string,
-    oldRels: Array<Record<string, string>>,
-    _newRels: Array<Record<string, string>>,
+    oldRels: Relationship[],
+    _newRels: Relationship[],
   ): void {
     removeFromIndex(this.root, this.namespace, entityId, oldRels);
   }
@@ -307,8 +308,9 @@ export class UpjackApp {
       let entity: EntityRecord;
       try {
         entity = this.getEntity(entityType, eid);
-      } catch {
-        continue;
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Entity not found")) continue;
+        throw err;
       }
       if ((entity.status ?? "active") !== "active") continue;
       if (filter && !UpjackApp._matchesFilter(entity, filter)) continue;
@@ -347,7 +349,10 @@ export class UpjackApp {
       try {
         const targetType = this._resolveType(r.target);
         results.push(this.getEntity(targetType, r.target));
-      } catch {}
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Entity not found")) continue;
+        throw err;
+      }
     }
     return results;
   }
@@ -360,7 +365,11 @@ export class UpjackApp {
       try {
         const sourceType = this._resolveType(entry.source);
         results.push(this.getEntity(sourceType, entry.source));
-      } catch {}
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Entity not found")) continue;
+        if (err instanceof Error && err.message.startsWith("Unknown prefix")) continue;
+        throw err;
+      }
     }
     return results;
   }
@@ -378,7 +387,11 @@ export class UpjackApp {
           const target = this.getEntity(targetType, r.target);
           if (!related[r.rel]) related[r.rel] = [];
           related[r.rel].push(target);
-        } catch {}
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith("Entity not found")) continue;
+          if (err instanceof Error && err.message.startsWith("Unknown prefix")) continue;
+          throw err;
+        }
       }
 
       // Reverse relationships
@@ -396,7 +409,11 @@ export class UpjackApp {
           const source = this.getEntity(sourceType, entry.source);
           if (!related[relName]) related[relName] = [];
           related[relName].push(source);
-        } catch {}
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith("Entity not found")) continue;
+          if (err instanceof Error && err.message.startsWith("Unknown prefix")) continue;
+          throw err;
+        }
       }
     }
 
@@ -453,7 +470,10 @@ export class UpjackApp {
         if ((entity.status ?? "active") !== "active") continue;
         if (action !== undefined && entity.action !== action) continue;
         results.push(entity);
-      } catch {}
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Entity not found")) continue;
+        throw err;
+      }
     }
 
     results.sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));

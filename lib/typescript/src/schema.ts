@@ -205,9 +205,7 @@ export function validateSchemaChange(
  * Strips JSON Schema meta keywords and ensures `type: "object"`.
  */
 export function buildEntityOutputSchema(schema: Record<string, unknown>): Record<string, unknown> {
-  const result = structuredClone(schema);
-  result.$schema = undefined;
-  result.$id = undefined;
+  const { $schema: _, $id: __, ...result } = structuredClone(schema);
   if (!("type" in result)) {
     result.type = "object";
   }

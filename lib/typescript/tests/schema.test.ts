@@ -287,7 +287,7 @@ describe("buildEntityOutputSchema", () => {
     expect(result.type).toBe("object");
   });
 
-  it("strips $schema and $id", () => {
+  it("strips $schema and $id (keys absent, not undefined)", () => {
     const schema = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $id: "https://example.com/widget",
@@ -295,8 +295,8 @@ describe("buildEntityOutputSchema", () => {
       properties: { name: { type: "string" } },
     };
     const result = buildEntityOutputSchema(schema);
-    expect(result.$schema).toBeUndefined();
-    expect(result.$id).toBeUndefined();
+    expect("$schema" in result).toBe(false);
+    expect("$id" in result).toBe(false);
   });
 
   it("deep copies input (mutations isolated)", () => {

@@ -11,10 +11,17 @@ import { generateId } from "./ids.js";
 import { entityDir, entityPath } from "./paths.js";
 import { hydrateDefaults, validateEntity } from "./schema.js";
 
+export interface Relationship {
+  rel: string;
+  target: string;
+  label?: string;
+  [key: string]: string | undefined;
+}
+
 export type RelationshipsChangedCallback = (
   entityId: string,
-  oldRels: Array<Record<string, string>>,
-  newRels: Array<Record<string, string>>,
+  oldRels: Relationship[],
+  newRels: Relationship[],
 ) => void;
 
 /** Base fields present on every entity record. */
@@ -28,7 +35,7 @@ export interface EntityRecord {
   status: string;
   tags: string[];
   source?: Record<string, string>;
-  relationships: Array<{ rel: string; target: string; label?: string }>;
+  relationships: Relationship[];
   [key: string]: unknown;
 }
 
@@ -93,11 +100,7 @@ export function createEntity(
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
 
   if (onRelationshipsChanged && record.relationships.length > 0) {
-    onRelationshipsChanged(
-      entityId,
-      [],
-      record.relationships as unknown as Array<Record<string, string>>,
-    );
+    onRelationshipsChanged(entityId, [], record.relationships);
   }
 
   return record;
@@ -162,11 +165,7 @@ export function updateEntity(
   if (onRelationshipsChanged) {
     const newRelationships = JSON.stringify(existing.relationships ?? []);
     if (oldRelationships !== newRelationships) {
-      onRelationshipsChanged(
-        entityId,
-        JSON.parse(oldRelationships),
-        (existing.relationships ?? []) as unknown as Array<Record<string, string>>,
-      );
+      onRelationshipsChanged(entityId, JSON.parse(oldRelationships), existing.relationships ?? []);
     }
   }
 
@@ -251,11 +250,7 @@ export function deleteEntity(
   if (hard) {
     unlinkSync(path);
     if (onRelationshipsChanged && entity.relationships?.length > 0) {
-      onRelationshipsChanged(
-        entityId,
-        entity.relationships as unknown as Array<Record<string, string>>,
-        [],
-      );
+      onRelationshipsChanged(entityId, entity.relationships, []);
     }
   } else {
     entity.status = "deleted";

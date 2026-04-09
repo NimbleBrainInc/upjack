@@ -1,4 +1,11 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -445,6 +452,10 @@ const BASE_ENTITY_FIELD_NAMES = new Set([
   "source",
   "relationships",
 ]);
+
+// Fields stripped from seed data before create — matches Python behavior.
+// Preserves relationships and tags so seed data can set up a connected graph.
+const SEED_STRIP_FIELDS = new Set(["type", "created_at", "updated_at", "created_by"]);
 const ALLOWED_FIELD_TYPES = new Set(["string", "number", "integer", "boolean", "array", "object"]);
 const TYPE_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   string: (v) => typeof v === "string",
@@ -491,8 +502,8 @@ function buildUtilityTools(
           const baseName = file.replace(".json", "");
           const entityName = pluralToName[baseName] ?? baseName;
           for (const entity of entities) {
-            // Strip system fields
-            for (const k of BASE_ENTITY_FIELD_NAMES) {
+            // Strip system metadata but preserve relationships and tags
+            for (const k of SEED_STRIP_FIELDS) {
               delete entity[k];
             }
             app.createEntity(entityName, entity);
@@ -594,7 +605,18 @@ function buildUtilityTools(
     }
 
     const warnings = diagnostics.filter((d) => d.severity === "warning");
-    writeFileSync(schemaPath, `${JSON.stringify(newSchema, null, 2)}\n`);
+    const tmpPath = `${schemaPath}.tmp`;
+    try {
+      writeFileSync(tmpPath, `${JSON.stringify(newSchema, null, 2)}\n`);
+      renameSync(tmpPath, schemaPath);
+    } catch (err) {
+      try {
+        if (existsSync(tmpPath)) unlinkSync(tmpPath);
+      } catch {
+        // ignore cleanup errors
+      }
+      throw err;
+    }
     app.reloadSchema(entityType);
 
     const result: Record<string, unknown> = {
