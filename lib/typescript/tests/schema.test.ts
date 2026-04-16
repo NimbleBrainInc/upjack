@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BASE_ENTITY_FIELDS,
   buildEntityOutputSchema,
   buildListOutputSchema,
   hydrateDefaults,
@@ -12,6 +13,29 @@ import {
   validateEntity,
   validateSchemaChange,
 } from "../src/schema.js";
+
+describe("SDK parity", () => {
+  // Pin the cross-SDK contract so Python and TypeScript stay aligned. The
+  // Python SDK has a mirror test (see tests/test_schema.py TestSdkParity)
+  // asserting the same canonical set. If you change one, change the other —
+  // and update CHANGELOG to note the tool-schema delta.
+  it("BASE_ENTITY_FIELDS is the canonical set (matches Python)", () => {
+    expect(new Set(BASE_ENTITY_FIELDS)).toEqual(
+      new Set([
+        "id",
+        "type",
+        "version",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "status",
+        "tags",
+        "source",
+        "relationships",
+      ]),
+    );
+  });
+});
 
 describe("loadSchema", () => {
   it("loads a valid schema file", () => {
@@ -136,18 +160,27 @@ describe("hydrateDefaults", () => {
     expect(data).toEqual({ name: "test" });
   });
 
-  it("handles allOf with $ref to base entity schema", () => {
-    const schema = {
-      allOf: [
-        { $ref: "https://upjack.dev/schemas/v1/upjack-entity.schema.json" },
-        {
-          type: "object",
-          properties: {
-            priority: { type: "string", default: "medium" },
+  it("handles inlined allOf base entity schema from loadSchema", () => {
+    // Schemas loaded via loadSchema() carry the base entity inlined under
+    // allOf — hydrateDefaults walks those inlined members to pull defaults
+    // (status, tags, relationships, etc.) alongside app-level defaults.
+    const tmpDir = mkdtempSync(join(tmpdir(), "upjack-schema-test-"));
+    const schemaPath = join(tmpDir, "contact.schema.json");
+    writeFileSync(
+      schemaPath,
+      JSON.stringify({
+        allOf: [
+          { $ref: "https://upjack.dev/schemas/v1/upjack-entity.schema.json" },
+          {
+            type: "object",
+            properties: {
+              priority: { type: "string", default: "medium" },
+            },
           },
-        },
-      ],
-    };
+        ],
+      }),
+    );
+    const schema = loadSchema(schemaPath);
     const data = { name: "test" };
     const result = hydrateDefaults(data, schema);
     // Base schema has defaults for created_by, status, tags, relationships

@@ -14,42 +14,109 @@ const addFormats =
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Canonical `$id` / `$ref` URL for the bundled base entity schema. App
+ * schemas reference this via `allOf: [{"$ref": BASE_ENTITY_REF}]` so apps
+ * can layer their own fields on top of the framework-managed ones.
+ */
+export const BASE_ENTITY_REF = "https://upjack.dev/schemas/v1/upjack-entity.schema.json";
+
+/**
+ * Non-standard marker attached to the inlined base-entity schema so
+ * downstream code can identify it without the `$ref` or `$id` (both of
+ * which cause problems for JSON Schema validators that auto-register
+ * schemas by `$id`). Consumers should treat any allOf member with this
+ * field as "the base entity schema, inlined by loadSchema".
+ */
+export const BASE_ENTITY_MARKER = "x-upjack-base-entity";
+
+/**
+ * Framework-managed base entity fields — the canonical set used across both
+ * SDKs. Stripped from tool input schemas (auto-managed, not user-controlled)
+ * and also filtered out of author-supplied examples so the published tool
+ * schema doesn't instruct LLMs to send them.
+ */
+export const BASE_ENTITY_FIELDS: ReadonlySet<string> = new Set([
+  "id",
+  "type",
+  "version",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "status",
+  "tags",
+  "source",
+  "relationships",
+]);
+
 const BASE_SCHEMA_PATH = join(__dirname, "schemas", "upjack-entity.schema.json");
-const BASE_SCHEMA = JSON.parse(readFileSync(BASE_SCHEMA_PATH, "utf-8"));
+const BASE_SCHEMA = JSON.parse(readFileSync(BASE_SCHEMA_PATH, "utf-8")) as Record<string, unknown>;
 
 // @ts-expect-error -- AJV constructor works at runtime despite CJS type mismatch
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 // @ts-expect-error -- ajv-formats works at runtime despite CJS type mismatch
 addFormats(ajv);
 
-// Register the base schema under its remote URI so $ref resolution works offline
-ajv.addSchema(BASE_SCHEMA, "https://upjack.dev/schemas/v1/upjack-entity.schema.json");
-
-// Map $ref URIs to resolved schemas for hydration
-const REF_MAP: Record<string, Record<string, unknown>> = {
-  "https://upjack.dev/schemas/v1/upjack-entity.schema.json": BASE_SCHEMA as Record<string, unknown>,
-};
+// Register the base schema so AJV resolves $ref to it locally (defensive
+// guard against schemas that bypass loadSchema).
+ajv.addSchema(BASE_SCHEMA, BASE_ENTITY_REF);
 
 /**
- * Load a JSON Schema from a file path.
+ * Load a JSON Schema from disk and inline the base-entity `$ref`.
  *
- * @param path - Path to the .schema.json file.
- * @returns Parsed JSON Schema object.
- * @throws Error if the file doesn't exist or isn't valid JSON.
+ * Any `allOf: [{"$ref": BASE_ENTITY_REF}]` entry is replaced with the
+ * bundled base-entity schema inline, so every downstream consumer sees a
+ * fully self-contained schema. This is the single source of truth for
+ * $ref resolution — no caller needs to do it again.
  */
 export function loadSchema(path: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(path, "utf-8"));
+  const schema = JSON.parse(readFileSync(path, "utf-8"));
+  inlineBaseEntityRef(schema);
+  return schema;
+}
+
+function inlineBaseEntityRef(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const item of node) inlineBaseEntityRef(item);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+
+  const obj = node as Record<string, unknown>;
+  const allOf = obj.allOf;
+  if (Array.isArray(allOf)) {
+    for (let i = 0; i < allOf.length; i++) {
+      const sub = allOf[i];
+      if (
+        sub &&
+        typeof sub === "object" &&
+        (sub as Record<string, unknown>).$ref === BASE_ENTITY_REF
+      ) {
+        // Drop $schema and $id — the inlined copy sharing its $id with the
+        // pre-registered schema in AJV's registry triggers a "resolves to
+        // more than one schema" error. Our own marker lets downstream code
+        // recognise this member without those identifiers.
+        const {
+          $schema: _s,
+          $id: _i,
+          ...inlined
+        } = structuredClone(BASE_SCHEMA) as Record<string, unknown>;
+        inlined[BASE_ENTITY_MARKER] = true;
+        allOf[i] = inlined;
+      }
+    }
+  }
+  for (const value of Object.values(obj)) {
+    inlineBaseEntityRef(value);
+  }
 }
 
 /**
  * Validate entity data against a JSON Schema.
  *
- * Uses JSON Schema draft 2020-12 validation. Resolves $ref to the
- * base entity schema via a bundled local copy.
- *
- * @param data - Entity data to validate.
- * @param schema - JSON Schema to validate against.
- * @throws Error if validation fails, with details of all errors.
+ * The AJV registry resolves any remaining `$ref` to the base entity schema
+ * locally, so validation works even if the caller handed us a schema that
+ * bypassed `loadSchema`.
  */
 export function validateEntity(
   data: Record<string, unknown>,
@@ -68,10 +135,6 @@ export function validateEntity(
  * Create a composed schema from base entity schema and app-specific schema.
  *
  * Uses allOf composition so both base and app constraints apply.
- *
- * @param baseSchema - The upjack-entity base schema.
- * @param appSchema - The app-specific entity schema.
- * @returns Composed schema with allOf referencing both.
  */
 export function resolveEntitySchema(
   baseSchema: Record<string, unknown>,
@@ -86,8 +149,9 @@ export function resolveEntitySchema(
 /**
  * Fill missing fields from schema defaults.
  *
- * Walks `properties` and `allOf` sub-schemas (resolving `$ref` to the
- * bundled base entity schema). Does NOT mutate the input data.
+ * Walks `properties` and `allOf` sub-schemas. Assumes `schema` has been
+ * loaded via {@link loadSchema} so any base-entity `$ref` has been inlined —
+ * does not resolve live `$ref` values.
  */
 export function hydrateDefaults(
   data: Record<string, unknown>,
@@ -102,14 +166,10 @@ function applyPropertyDefaults(
   data: Record<string, unknown>,
   schema: Record<string, unknown>,
 ): void {
-  // Handle allOf — walk each sub-schema
   const allOf = schema.allOf as Array<Record<string, unknown>> | undefined;
   if (allOf) {
     for (const sub of allOf) {
-      const ref = sub.$ref as string | undefined;
-      if (ref && ref in REF_MAP) {
-        applyPropertyDefaults(data, REF_MAP[ref]);
-      } else {
+      if (sub && typeof sub === "object") {
         applyPropertyDefaults(data, sub);
       }
     }
@@ -141,7 +201,6 @@ export function validateSchemaChange(
   const oldRequired = new Set((oldSchema.required ?? []) as string[]);
   const newRequired = new Set((newSchema.required ?? []) as string[]);
 
-  // Newly required without default
   for (const field of [...newRequired].sort()) {
     if (oldRequired.has(field)) continue;
     const prop = newProps[field];
@@ -154,7 +213,6 @@ export function validateSchemaChange(
     }
   }
 
-  // Type change and enum narrowing on shared fields
   const sharedFields = Object.keys(oldProps)
     .filter((k) => k in newProps)
     .sort();
@@ -185,7 +243,6 @@ export function validateSchemaChange(
     }
   }
 
-  // Field removed
   for (const field of Object.keys(oldProps).sort()) {
     if (!(field in newProps)) {
       diagnostics.push({
@@ -202,22 +259,14 @@ export function validateSchemaChange(
 /**
  * Build an output schema for a single-entity tool response.
  *
- * Strips JSON Schema meta keywords and ensures `type: "object"`.
+ * Expects `schema` to be already self-contained (loaded via {@link loadSchema}).
+ * Strips JSON Schema meta keywords that don't belong in a tool output schema.
+ * MCP requires `type: "object"` on every outputSchema.
  */
 export function buildEntityOutputSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const { $schema: _, $id: __, ...result } = structuredClone(schema);
   if (!("type" in result)) {
     result.type = "object";
-  }
-  // Resolve $ref in allOf to prevent downstream AJV resolution failures
-  if (Array.isArray(result.allOf)) {
-    result.allOf = (result.allOf as Array<Record<string, unknown>>).map((sub) => {
-      const ref = sub.$ref as string | undefined;
-      if (ref && ref in REF_MAP) {
-        return structuredClone(REF_MAP[ref]);
-      }
-      return sub;
-    });
   }
   return result;
 }

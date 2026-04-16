@@ -14,46 +14,91 @@ logger = logging.getLogger(__name__)
 
 _SCHEMAS_DIR = Path(__file__).parent / "schemas"
 
-# Load the bundled base entity schema and build a registry so that
-# app schemas using $ref to the remote URL resolve locally.
+# Canonical $id / $ref URL for the bundled base entity schema. App schemas
+# reference this via `allOf: [{"$ref": BASE_ENTITY_REF}]` so apps can layer
+# their own fields on top of the framework-managed ones.
+BASE_ENTITY_REF = "https://upjack.dev/schemas/v1/upjack-entity.schema.json"
+
+# Non-standard marker attached to the inlined base-entity schema so downstream
+# code can identify it without the ``$ref`` or ``$id`` (both cause problems for
+# JSON Schema validators that auto-register schemas by ``$id``). This matches
+# the TypeScript SDK's convention for tool-schema portability.
+BASE_ENTITY_MARKER = "x-upjack-base-entity"
+
+# Framework-managed base entity fields — the canonical set used across both
+# SDKs. Stripped from tool input schemas (auto-managed, not user-controlled)
+# and also filtered out of author-supplied examples so the published tool
+# schema doesn't instruct LLMs to send them.
+BASE_ENTITY_FIELDS = frozenset(
+    {
+        "id",
+        "type",
+        "version",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "status",
+        "tags",
+        "source",
+        "relationships",
+    }
+)
+
+# The bundled copy of the base entity schema, loaded once at import time.
 _BASE_SCHEMA = json.loads((_SCHEMAS_DIR / "upjack-entity.schema.json").read_text())
 _BASE_RESOURCE = referencing.Resource.from_contents(
     _BASE_SCHEMA, default_specification=referencing.jsonschema.DRAFT202012
 )
-_REGISTRY = referencing.Registry().with_resource(
-    "https://upjack.dev/schemas/v1/upjack-entity.schema.json", _BASE_RESOURCE
-)
+_REGISTRY = referencing.Registry().with_resource(BASE_ENTITY_REF, _BASE_RESOURCE)
 
 
 def load_schema(path: str | Path) -> dict[str, Any]:
-    """Load a JSON Schema from a file path.
+    """Load a JSON Schema from disk and inline the base-entity ``$ref``.
 
-    Args:
-        path: Path to the .schema.json file.
-
-    Returns:
-        Parsed JSON Schema as a dict.
-
-    Raises:
-        FileNotFoundError: If the schema file doesn't exist.
-        json.JSONDecodeError: If the file isn't valid JSON.
+    Any ``allOf: [{"$ref": BASE_ENTITY_REF}]`` entry is replaced with the
+    bundled base-entity schema inline, so every downstream consumer sees a
+    fully self-contained schema. This is the single source of truth for
+    $ref resolution — no caller needs to do it again.
     """
-    path = Path(path)
-    return json.loads(path.read_text())
+    schema = json.loads(Path(path).read_text())
+    _inline_base_entity_ref(schema)
+    return schema
+
+
+def _inline_base_entity_ref(node: Any) -> None:
+    """Walk a schema in place, replacing every ``$ref: BASE_ENTITY_REF`` dict
+    with a deep copy of the bundled base schema contents.
+
+    ``$schema`` and ``$id`` are dropped from the inlined copy — the shared
+    ``$id`` would clash with validator registries that auto-register schemas
+    by identifier (this is what bites AJV on the TypeScript side). A
+    non-standard ``BASE_ENTITY_MARKER`` key is attached so downstream code
+    can still identify the inlined base without those identifiers. Both SDKs
+    use this convention so tool schemas published over MCP are byte-aligned.
+    """
+    if isinstance(node, dict):
+        all_of = node.get("allOf")
+        if isinstance(all_of, list):
+            for i, sub in enumerate(all_of):
+                if isinstance(sub, dict) and sub.get("$ref") == BASE_ENTITY_REF:
+                    inlined = copy.deepcopy(_BASE_SCHEMA)
+                    inlined.pop("$schema", None)
+                    inlined.pop("$id", None)
+                    inlined[BASE_ENTITY_MARKER] = True
+                    all_of[i] = inlined
+        for value in node.values():
+            _inline_base_entity_ref(value)
+    elif isinstance(node, list):
+        for item in node:
+            _inline_base_entity_ref(item)
 
 
 def validate_entity(data: dict[str, Any], schema: dict[str, Any]) -> None:
     """Validate entity data against a JSON Schema.
 
-    Uses JSON Schema draft 2020-12 validation. Resolves $ref to the
-    base entity schema via a bundled local copy.
-
-    Args:
-        data: Entity data to validate.
-        schema: JSON Schema to validate against.
-
-    Raises:
-        jsonschema.ValidationError: If validation fails.
+    Uses JSON Schema draft 2020-12 validation. The registry resolves any
+    remaining ``$ref`` to the base entity schema locally, so validation works
+    even if the caller handed us a schema that bypassed ``load_schema``.
     """
     missing = _check_required_without_defaults(schema)
     for field in missing:
@@ -68,19 +113,12 @@ def validate_entity(data: dict[str, Any], schema: dict[str, Any]) -> None:
 
 
 def hydrate_defaults(data: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
-    """Fill missing fields in data with defaults from the schema.
+    """Fill missing fields in ``data`` with defaults from ``schema``.
 
-    Walks the schema's "properties" (and any allOf members) to find
-    fields with a "default" value. If the field is absent from data,
-    sets it to the default. Operates on a shallow copy — does not
-    mutate the input dict.
-
-    Args:
-        data: Entity data (may be missing fields).
-        schema: JSON Schema with optional "default" values on properties.
-
-    Returns:
-        A new dict with missing fields filled from schema defaults.
+    Walks the schema's ``properties`` and any ``allOf`` members. Assumes
+    ``schema`` has been loaded via :func:`load_schema` (so any base-entity
+    ``$ref`` has been inlined) — does not resolve live ``$ref`` values.
+    Operates on a shallow copy of ``data``.
     """
     result = dict(data)
     _apply_property_defaults(result, schema)
@@ -88,14 +126,9 @@ def hydrate_defaults(data: dict[str, Any], schema: dict[str, Any]) -> dict[str, 
 
 
 def _apply_property_defaults(data: dict[str, Any], schema: dict[str, Any]) -> None:
-    """Apply defaults from a single schema node's properties."""
-    # Handle allOf — walk each sub-schema
+    """Apply defaults from a single schema node's properties and allOf members."""
     for sub in schema.get("allOf", []):
-        # Resolve $ref to the base entity schema
-        ref = sub.get("$ref")
-        if ref and ref in _REF_MAP:
-            _apply_property_defaults(data, _REF_MAP[ref])
-        else:
+        if isinstance(sub, dict):
             _apply_property_defaults(data, sub)
 
     props = schema.get("properties", {})
@@ -104,25 +137,12 @@ def _apply_property_defaults(data: dict[str, Any], schema: dict[str, Any]) -> No
             data[field_name] = copy.deepcopy(field_schema["default"])
 
 
-# Map $ref URIs to resolved schemas for hydration
-_REF_MAP: dict[str, dict[str, Any]] = {
-    "https://upjack.dev/schemas/v1/upjack-entity.schema.json": _BASE_SCHEMA,
-}
-
-
 def resolve_entity_schema(
     base_schema: dict[str, Any], app_schema: dict[str, Any]
 ) -> dict[str, Any]:
-    """Create a composed schema from base entity schema and app-specific schema.
+    """Create a composed schema from the base entity schema and an app schema.
 
-    Uses allOf composition so both base and app constraints apply.
-
-    Args:
-        base_schema: The upjack-entity base schema.
-        app_schema: The app-specific entity schema.
-
-    Returns:
-        Composed schema with allOf referencing both.
+    Uses ``allOf`` composition so both base and app constraints apply.
     """
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -217,25 +237,21 @@ def validate_schema_change(
 def build_entity_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Build an output schema for a single-entity tool response.
 
-    Returns the full entity schema (including base fields) with JSON Schema
-    meta keywords stripped, suitable for use as a tool's ``outputSchema``.
-    MCP requires ``type: "object"`` on every outputSchema.
+    Expects ``schema`` to be already self-contained (loaded via
+    :func:`load_schema`). Strips JSON Schema meta keywords that don't belong
+    in a tool output schema. MCP requires ``type: "object"`` on every
+    outputSchema.
     """
     result = copy.deepcopy(schema)
     result.pop("$schema", None)
     result.pop("$id", None)
-    # MCP spec requires outputSchema to have type: "object"
     if "type" not in result:
         result["type"] = "object"
     return result
 
 
 def build_list_output_schema(entity_schema: dict[str, Any]) -> dict[str, Any]:
-    """Build an output schema for a list/search response envelope.
-
-    Returns an object schema with ``entities`` (array of entity schemas)
-    and ``count`` (integer).
-    """
+    """Build an output schema for a list/search response envelope."""
     item_schema = build_entity_output_schema(entity_schema)
     return {
         "type": "object",

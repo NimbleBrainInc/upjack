@@ -22,26 +22,19 @@ from upjack.activity import ACTIVITY_ENTITY_DEF
 from upjack.app import UpjackApp
 from upjack.relations import rebuild_index
 from upjack.schema import (
+    BASE_ENTITY_FIELDS,
+    BASE_ENTITY_MARKER,
+    BASE_ENTITY_REF,
     build_entity_output_schema,
     build_list_output_schema,
     load_schema,
     validate_schema_change,
 )
 
-# Base entity fields auto-managed by the framework — stripped from tool input schemas
-_BASE_ENTITY_KEYS = frozenset(
-    {
-        "id",
-        "type",
-        "version",
-        "created_at",
-        "updated_at",
-        "created_by",
-        "status",
-        "tags",
-        "source",
-    }
-)
+# Alias for readability at call sites — this is the canonical set of
+# framework-managed fields, imported from upjack.schema so both the server
+# module here and the parity tests reference one source of truth.
+_BASE_ENTITY_KEYS = BASE_ENTITY_FIELDS
 
 
 def _wrap_list(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
@@ -55,17 +48,32 @@ def _wrap_list(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
 
 
 def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) -> dict[str, Any]:
-    """Prepare an entity JSON Schema for use as an MCP tool input.
+    """Project an app entity schema onto an MCP tool input schema.
 
-    Strips base entity fields (auto-managed by the framework) and JSON Schema
-    meta keywords that don't belong in a tool input schema.  For update tools,
-    removes ``required`` since updates are partial merges.
+    Tool inputs carry only user-controlled fields — framework-managed base
+    fields (id, type, timestamps, status, tags, source) are excluded. That
+    means:
+
+    - Any ``allOf`` member pointing at the bundled base entity schema is
+      dropped entirely — it only contributes base fields.
+    - ``properties`` and ``required`` are filtered to remove those same base
+      fields.
+    - For update tools, ``required`` is dropped (partial merge semantics).
+    - JSON Schema meta keywords (``$schema``, ``$id``) are stripped.
+
+    Assumes ``schema`` has been loaded via ``load_schema`` so any base-entity
+    ``$ref`` has already been inlined. Allowing a raw on-disk schema through
+    here would leave a remote ``$ref`` that downstream serializers could try
+    to dereference over the network.
     """
     result = copy.deepcopy(schema)
-
-    # Strip JSON Schema meta keywords not applicable inside tool input
     result.pop("$schema", None)
     result.pop("$id", None)
+
+    if "allOf" in result:
+        result["allOf"] = [sub for sub in result["allOf"] if not _is_base_entity_schema(sub)]
+        if not result["allOf"]:
+            del result["allOf"]
 
     if "properties" in result:
         result["properties"] = {
@@ -73,7 +81,6 @@ def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) 
         }
 
     if for_update:
-        # Updates are partial merges — all fields optional
         result.pop("required", None)
     elif "required" in result:
         result["required"] = [r for r in result["required"] if r not in _BASE_ENTITY_KEYS]
@@ -81,6 +88,15 @@ def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) 
             del result["required"]
 
     return result
+
+
+def _is_base_entity_schema(node: Any) -> bool:
+    """True if ``node`` is either a ``$ref`` to the base entity schema (raw
+    on-disk form) or an inlined copy carrying ``BASE_ENTITY_MARKER`` (the form
+    produced by ``load_schema``)."""
+    if not isinstance(node, dict):
+        return False
+    return node.get("$ref") == BASE_ENTITY_REF or node.get(BASE_ENTITY_MARKER) is True
 
 
 def _make_entity_tool(
@@ -181,23 +197,34 @@ def _register_entity_tools(
     entity_out = build_entity_output_schema(schema) if schema else None
     list_out = build_list_output_schema(schema) if schema else None
 
+    # Author-supplied examples on the entity schema are passed through to
+    # create / update tool schemas as in-context anchors for LLMs. This is
+    # pass-through, not generation — we don't invent values. Base entity
+    # fields are auto-managed, so we strip them from examples even if the
+    # author included them.
+    schema_examples = schema.get("examples") if isinstance(schema, dict) else None
+    raw_examples = schema_examples if isinstance(schema_examples, list) else []
+    author_examples = [
+        {k: v for k, v in ex.items() if k not in _BASE_ENTITY_KEYS}
+        for ex in raw_examples
+        if isinstance(ex, dict)
+    ]
+
     # --- create_{name} ---
-    # Use the entity's JSON Schema so LLMs see full field structure
     if schema:
-        data_schema = _prepare_entity_schema(schema)
+        create_params = _prepare_entity_schema(schema)
     else:
-        data_schema = {"type": "object"}
+        create_params = {"type": "object"}
+    create_params.setdefault("type", "object")
+    if author_examples:
+        create_params["examples"] = copy.deepcopy(author_examples)
 
     mcp.add_tool(
         _make_entity_tool(
             name=f"create_{name}",
             description=f"Create a new {name}. {id_hint}.",
-            parameters={
-                "type": "object",
-                "properties": {"data": data_schema},
-                "required": ["data"],
-            },
-            handler=lambda args, _n=name: app.create_entity(_n, args["data"]),
+            parameters=create_params,
+            handler=lambda args, _n=name: app.create_entity(_n, args),
             output_schema=entity_out,
         )
     )
@@ -216,6 +243,7 @@ def _register_entity_tools(
                     },
                 },
                 "required": [id_param],
+                "examples": [{id_param: f"{prefix}_01HXXX"}],
             },
             handler=lambda args, _n=name, _p=id_param: app.get_entity(_n, args[_p]),
             output_schema=entity_out,
@@ -223,29 +251,47 @@ def _register_entity_tools(
     )
 
     # --- update_{name} ---
-    # Use the entity's JSON Schema with required stripped (partial merge)
     if schema:
-        update_data_schema = _prepare_entity_schema(schema, for_update=True)
+        update_fields_schema = _prepare_entity_schema(schema, for_update=True)
     else:
-        update_data_schema = {"type": "object"}
+        update_fields_schema = {"type": "object"}
+
+    raw_props = update_fields_schema.get("properties")
+    extra_props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
+    update_params: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            id_param: {
+                "type": "string",
+                "description": f"{name} ID ({prefix}_...)",
+            },
+            **extra_props,
+        },
+        "required": [id_param],
+    }
+    if author_examples:
+        update_params["examples"] = [
+            {id_param: f"{prefix}_01HXXX", **example} for example in author_examples
+        ]
 
     mcp.add_tool(
         _make_entity_tool(
             name=f"update_{name}",
-            description=f"Update a {name} by ID. Merges fields by default. {id_hint}.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    id_param: {
-                        "type": "string",
-                        "description": f"{name} ID ({prefix}_...)",
-                    },
-                    "data": update_data_schema,
-                },
-                "required": [id_param, "data"],
-            },
+            description=(
+                f"Update a {name} by ID. Merges fields by default — pass any subset "
+                f"of fields to change. Unknown fields are merged onto the entity "
+                f"as-is (the schema does not enforce additionalProperties=false). "
+                f"{id_hint}."
+            ),
+            parameters=update_params,
+            # NB: we strip the id param from the payload before merging.
+            # If an app ever declares a top-level entity property literally
+            # named ``{entity_name}_id`` (e.g. ``user_id`` on a ``user``
+            # entity), it becomes unreachable via the update tool. Avoid
+            # that collision in your schema — or use a differently-named
+            # external-id field.
             handler=lambda args, _n=name, _p=id_param: app.update_entity(
-                _n, args[_p], args["data"]
+                _n, args[_p], {k: v for k, v in args.items() if k != _p}
             ),
             output_schema=entity_out,
         )
@@ -302,6 +348,7 @@ def _register_entity_tools(
                     },
                 },
                 "required": [id_param],
+                "examples": [{id_param: f"{prefix}_01HXXX"}],
             },
             handler=lambda args, _n=name, _p=id_param: app.delete_entity(
                 _n, args[_p], hard=args.get("hard", False)
@@ -377,19 +424,9 @@ _TYPE_VALIDATORS: dict[str, type | tuple[type, ...]] = {
 
 _FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
-_BASE_ENTITY_FIELD_NAMES = frozenset(
-    {
-        "id",
-        "type",
-        "version",
-        "created_at",
-        "updated_at",
-        "created_by",
-        "status",
-        "tags",
-        "relationships",
-    }
-)
+# Reserved field names for the add_field tool — any name matching one of the
+# framework-managed fields is rejected. Same set as the tool-input strip list.
+_BASE_ENTITY_FIELD_NAMES = BASE_ENTITY_FIELDS
 
 
 def _register_add_field_tool(

@@ -298,7 +298,7 @@ describe("createServer", () => {
 });
 
 describe("tool input schemas", () => {
-  it("create tool exposes entity schema with full field structure", async () => {
+  it("create tool exposes entity fields at top level (no data wrapper)", async () => {
     const entitySchema = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
@@ -317,7 +317,6 @@ describe("tool input schemas", () => {
       required: ["name"],
     };
 
-    // makeManifest writes a default schema; overwrite it after
     const manifestPath = makeManifest(tmpDir, [
       { name: "campaign", plural: "campaigns", prefix: "cp" },
     ]);
@@ -326,33 +325,28 @@ describe("tool input schemas", () => {
     const tools = await client.listTools();
     const createTool = tools.tools.find((t) => t.name === "create_campaign");
     expect(createTool).toBeDefined();
-    const dataSchema = (
-      createTool?.inputSchema.properties as Record<string, Record<string, unknown>>
-    ).data;
+    const inputSchema = createTool?.inputSchema;
+    const props = inputSchema?.properties as Record<string, Record<string, unknown>>;
 
-    // App fields present with full metadata
-    expect(
-      (dataSchema.properties as Record<string, Record<string, unknown>>).name.description,
-    ).toBe("Campaign name");
-    expect((dataSchema.properties as Record<string, Record<string, unknown>>).score.minimum).toBe(
-      0,
-    );
+    // No `data` wrapper — fields are flat at the top level
+    expect(props).not.toHaveProperty("data");
+    expect(props.name.description).toBe("Campaign name");
+    expect(props.score.minimum).toBe(0);
     // Nested structure preserved
-    const drivers = (dataSchema.properties as Record<string, Record<string, unknown>>)
-      .emotional_drivers;
+    const drivers = props.emotional_drivers;
     expect((drivers.properties as Record<string, Record<string, unknown>>).fear).toBeDefined();
     // Base fields stripped
-    expect(dataSchema.properties).not.toHaveProperty("id");
-    expect(dataSchema.properties).not.toHaveProperty("type");
-    // $schema stripped
-    expect(dataSchema).not.toHaveProperty("$schema");
+    expect(props).not.toHaveProperty("id");
+    expect(props).not.toHaveProperty("type");
+    // $schema stripped at top level
+    expect(inputSchema).not.toHaveProperty("$schema");
     // Required preserved (minus base fields)
-    expect(dataSchema.required).toEqual(["name"]);
+    expect(inputSchema?.required).toEqual(["name"]);
 
     await client.close();
   });
 
-  it("update tool has no required in data (partial merge)", async () => {
+  it("update tool has flat fields and entity id, no data wrapper", async () => {
     const entitySchema = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
@@ -370,16 +364,15 @@ describe("tool input schemas", () => {
     const updateTool = tools.tools.find((t) => t.name === "update_item");
     expect(updateTool).toBeDefined();
     const inputSchema = updateTool?.inputSchema;
+    const props = inputSchema?.properties as Record<string, Record<string, unknown>>;
 
-    // Top-level requires entity_id and data
-    expect(inputSchema.properties).toHaveProperty("entity_id");
-    expect(new Set(inputSchema.required as string[])).toEqual(new Set(["entity_id", "data"]));
-    // Data schema has no required (partial update)
-    const dataSchema = (inputSchema.properties as Record<string, Record<string, unknown>>).data;
-    expect(dataSchema).not.toHaveProperty("required");
-    // But fields are still described
-    expect(dataSchema.properties).toHaveProperty("name");
-    expect(dataSchema.properties).toHaveProperty("score");
+    // Flat: item_id + fields at top level, no `data` wrapper
+    expect(props).not.toHaveProperty("data");
+    expect(props).toHaveProperty("item_id");
+    expect(props).toHaveProperty("name");
+    expect(props).toHaveProperty("score");
+    // Only the id is required (partial-merge semantics for everything else)
+    expect(inputSchema?.required).toEqual(["item_id"]);
 
     await client.close();
   });
@@ -400,7 +393,7 @@ describe("tool CRUD", () => {
   it("create + get roundtrip", async () => {
     const createResult = await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "Widget" } },
+      arguments: { name: "Widget" },
     });
     const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
     expect(created.id.startsWith("it_")).toBe(true);
@@ -408,7 +401,7 @@ describe("tool CRUD", () => {
 
     const getResult = await client.callTool({
       name: "get_item",
-      arguments: { entity_id: created.id },
+      arguments: { item_id: created.id },
     });
     const fetched = JSON.parse((getResult.content as Array<{ text: string }>)[0].text);
     expect(fetched.id).toBe(created.id);
@@ -417,13 +410,13 @@ describe("tool CRUD", () => {
   it("update merges fields", async () => {
     const createResult = await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "Old" } },
+      arguments: { name: "Old" },
     });
     const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
 
     const updateResult = await client.callTool({
       name: "update_item",
-      arguments: { entity_id: created.id, data: { name: "New", extra: "field" } },
+      arguments: { item_id: created.id, name: "New", extra: "field" },
     });
     const updated = JSON.parse((updateResult.content as Array<{ text: string }>)[0].text);
     expect(updated.name).toBe("New");
@@ -431,8 +424,8 @@ describe("tool CRUD", () => {
   });
 
   it("list returns created entities in envelope", async () => {
-    await client.callTool({ name: "create_item", arguments: { data: { name: "A" } } });
-    await client.callTool({ name: "create_item", arguments: { data: { name: "B" } } });
+    await client.callTool({ name: "create_item", arguments: { name: "A" } });
+    await client.callTool({ name: "create_item", arguments: { name: "B" } });
 
     const listResult = await client.callTool({ name: "list_items", arguments: {} });
     const result = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
@@ -441,8 +434,8 @@ describe("tool CRUD", () => {
   });
 
   it("search finds by text in envelope", async () => {
-    await client.callTool({ name: "create_item", arguments: { data: { name: "Alpha" } } });
-    await client.callTool({ name: "create_item", arguments: { data: { name: "Beta" } } });
+    await client.callTool({ name: "create_item", arguments: { name: "Alpha" } });
+    await client.callTool({ name: "create_item", arguments: { name: "Beta" } });
 
     const searchResult = await client.callTool({
       name: "search_items",
@@ -456,13 +449,13 @@ describe("tool CRUD", () => {
   it("soft delete", async () => {
     const createResult = await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "Doomed" } },
+      arguments: { name: "Doomed" },
     });
     const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
 
     const deleteResult = await client.callTool({
       name: "delete_item",
-      arguments: { entity_id: created.id },
+      arguments: { item_id: created.id },
     });
     const deleted = JSON.parse((deleteResult.content as Array<{ text: string }>)[0].text);
     expect(deleted.status).toBe("deleted");
@@ -470,6 +463,17 @@ describe("tool CRUD", () => {
     const listResult = await client.callTool({ name: "list_items", arguments: {} });
     const result = JSON.parse((listResult.content as Array<{ text: string }>)[0].text);
     expect(result.entities).toHaveLength(0);
+  });
+
+  it("legacy {data: {...}} shape is rejected", async () => {
+    // 0.5.0 removed the data wrapper. A call using the old shape is missing
+    // the required `name` field at the top level, so the schema validator
+    // rejects it rather than silently succeeding.
+    const result = await client.callTool({
+      name: "create_item",
+      arguments: { data: { name: "Wrapped" } },
+    });
+    expect(result.isError).toBeTruthy();
   });
 });
 
@@ -488,35 +492,41 @@ describe("JSON string deserialization", () => {
     await client.close();
   });
 
-  it("create works when data is a JSON string", async () => {
+  it("create works when array arg arrives as a JSON string", async () => {
+    // Over stdio transport, nested arrays/objects can arrive as JSON-serialized
+    // strings. The server parses these transparently.
+    const relsStr = JSON.stringify([{ rel: "belongs_to", target: "it_abc" }]);
     const result = await client.callTool({
       name: "create_item",
-      arguments: { data: JSON.stringify({ name: "StringWidget" }) },
+      arguments: { name: "StringWidget", relationships: relsStr },
     });
     const created = JSON.parse((result.content as Array<{ text: string }>)[0].text);
     expect(created.name).toBe("StringWidget");
-    expect(created.id.startsWith("it_")).toBe(true);
+    expect(Array.isArray(created.relationships)).toBe(true);
+    expect(created.relationships[0].rel).toBe("belongs_to");
   });
 
-  it("update works when data is a JSON string", async () => {
+  it("update works when object arg arrives as a JSON string", async () => {
     const createResult = await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "Original" } },
+      arguments: { name: "Original" },
     });
     const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
 
+    const detailStr = JSON.stringify({ nested: "value" });
     const updateResult = await client.callTool({
       name: "update_item",
-      arguments: { entity_id: created.id, data: JSON.stringify({ name: "Updated" }) },
+      arguments: { item_id: created.id, name: "Updated", detail: detailStr },
     });
     const updated = JSON.parse((updateResult.content as Array<{ text: string }>)[0].text);
     expect(updated.name).toBe("Updated");
+    expect(updated.detail).toEqual({ nested: "value" });
   });
 
   it("search works when filter is a JSON string", async () => {
     await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "Findme" } },
+      arguments: { name: "Findme" },
     });
 
     const searchResult = await client.callTool({
@@ -531,13 +541,13 @@ describe("JSON string deserialization", () => {
   it("plain string args are not mangled", async () => {
     const createResult = await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "Test" } },
+      arguments: { name: "Test" },
     });
     const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
 
     const getResult = await client.callTool({
       name: "get_item",
-      arguments: { entity_id: created.id },
+      arguments: { item_id: created.id },
     });
     const fetched = JSON.parse((getResult.content as Array<{ text: string }>)[0].text);
     expect(fetched.id).toBe(created.id);
@@ -546,7 +556,7 @@ describe("JSON string deserialization", () => {
   it("dict args still work (normal in-process path)", async () => {
     const result = await client.callTool({
       name: "create_item",
-      arguments: { data: { name: "DictWidget" } },
+      arguments: { name: "DictWidget" },
     });
     const created = JSON.parse((result.content as Array<{ text: string }>)[0].text);
     expect(created.name).toBe("DictWidget");
@@ -637,7 +647,7 @@ describe("tool listing filter", () => {
     // Hidden tools are still callable
     const result = await client.callTool({
       name: "create_session",
-      arguments: { data: { name: "Test" } },
+      arguments: { name: "Test" },
     });
     expect(result.isError).toBeFalsy();
 
@@ -695,7 +705,7 @@ describe("tool listing filter", () => {
     // But tools are still callable
     const result = await client.callTool({
       name: "create_session",
-      arguments: { data: { name: "Test" } },
+      arguments: { name: "Test" },
     });
     expect(result.isError).toBeFalsy();
 
@@ -749,7 +759,7 @@ describe("add_field tool", () => {
     // Create an entity — the new field should be accepted
     const createResult = await client.callTool({
       name: "create_widget",
-      arguments: { data: { name: "Test", color: "red" } },
+      arguments: { name: "Test", color: "red" },
     });
     const created = JSON.parse((createResult.content as Array<{ text: string }>)[0].text);
     expect(created.color).toBe("red");

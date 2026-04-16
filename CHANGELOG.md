@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] - 2026-04-16
+
+Applies to both the Python and TypeScript libraries. The tool contract is now identical across both SDKs.
+
+### Changed
+- **Breaking:** Auto-generated `create_{name}` and `update_{name}` MCP tools now take flat kwargs at the top level. The `{data: {...}}` wrapper has been removed — pass entity fields directly, e.g. `create_deal({"title": "...", "amount": 1000, "stage": "qualified"})`. Mixing the old and new shapes in the same tool list was measurably confusing LLMs and driving ~30% tool-call failure rates on the auto-generated CRUD surface. The flat form matches the hand-written tool convention and the FastMCP / MCP SDK idiom.
+- **Breaking (TypeScript only):** `get_{name}`, `update_{name}`, and `delete_{name}` tools now take an entity-specific id parameter (e.g. `contact_id`, `deal_id`) instead of the generic `entity_id`. This matches the Python library and the existing relationship-tool convention.
+- `get_{name}`, `update_{name}`, and `delete_{name}` tool schemas now include a JSON Schema `examples` field with a minimal valid call so LLMs have an in-context anchor for the correct shape. Author-supplied `examples` on the entity schema are passed through verbatim for `create_{name}` (base entity fields stripped so framework-managed values don't leak into tool examples).
+
+### Fixed
+- `tools/list` no longer forces a network fetch of `https://upjack.dev/schemas/v1/upjack-entity.schema.json` when activities or any `allOf + $ref` schema is in play. The base-entity `$ref` is now inlined at schema-load time (`load_schema` / `loadSchema`). This eliminates a ~4-second-per-call penalty that hit every activity-enabled app.
+
+### Added
+- `upjack.schema.BASE_ENTITY_REF` (Python and TypeScript) — the canonical `$id` / `$ref` URL for the bundled base entity schema, exported for consumers that want to recognise or rewrite it. The inlining itself is performed automatically by `load_schema` / `loadSchema` and is not part of the public API.
+- `upjack.schema.BASE_ENTITY_MARKER` (TypeScript only) — the non-standard key (`x-upjack-base-entity: true`) attached to the inlined base-entity schema so downstream code can identify it without the `$id` that would otherwise conflict with AJV's pre-registered copy.
+
 ## [0.3.1] - 2026-03-27
 
 ### Fixed
