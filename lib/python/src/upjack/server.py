@@ -22,9 +22,9 @@ from upjack.activity import ACTIVITY_ENTITY_DEF
 from upjack.app import UpjackApp
 from upjack.relations import rebuild_index
 from upjack.schema import (
+    BASE_ENTITY_REF,
     build_entity_output_schema,
     build_list_output_schema,
-    inline_base_entity_ref,
     load_schema,
     validate_schema_change,
 )
@@ -44,56 +44,6 @@ _BASE_ENTITY_KEYS = frozenset(
     }
 )
 
-_EXAMPLE_STRING_VALUES = {
-    "name": "Example",
-    "title": "Example",
-    "email": "user@example.com",
-    "phone": "+1-555-0100",
-    "stage": "qualified",
-    "status": "active",
-}
-
-
-def _example_for_type(field_name: str, prop: dict[str, Any]) -> Any:
-    """Produce a plausible example value for a JSON Schema property."""
-    # Prefer schema-supplied example / default
-    if "example" in prop:
-        return prop["example"]
-    if "examples" in prop and prop["examples"]:
-        return prop["examples"][0]
-    if "default" in prop:
-        return prop["default"]
-    if "enum" in prop and prop["enum"]:
-        return prop["enum"][0]
-
-    ptype = prop.get("type")
-    if ptype == "string":
-        return _EXAMPLE_STRING_VALUES.get(field_name, "Example")
-    if ptype == "integer":
-        return 0
-    if ptype == "number":
-        return 0
-    if ptype == "boolean":
-        return False
-    if ptype == "array":
-        return []
-    if ptype == "object":
-        return {}
-    return None
-
-
-def _build_create_example(entity_schema: dict[str, Any]) -> dict[str, Any] | None:
-    """Build a minimal example payload from an entity's required fields."""
-    required = entity_schema.get("required") or []
-    props = entity_schema.get("properties") or {}
-    if not required:
-        return None
-    example: dict[str, Any] = {}
-    for field in required:
-        prop = props.get(field, {})
-        example[field] = _example_for_type(field, prop)
-    return example
-
 
 def _wrap_list(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
     """Wrap a list of entities in a standard response envelope."""
@@ -106,60 +56,54 @@ def _wrap_list(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
 
 
 def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) -> dict[str, Any]:
-    """Prepare an entity JSON Schema for use as an MCP tool input.
+    """Project an app entity schema onto an MCP tool input schema.
 
-    Strips base entity fields (auto-managed by the framework), inlines any
-    ``$ref`` to the bundled base entity schema so the published tool schema is
-    self-contained, and removes JSON Schema meta keywords that don't belong in
-    a tool input schema.  For update tools, removes ``required`` since updates
-    are partial merges.
+    Tool inputs carry only user-controlled fields — framework-managed base
+    fields (id, type, timestamps, status, tags, source) are excluded. That
+    means:
+
+    - Any ``allOf`` member pointing at the bundled base entity schema is
+      dropped entirely — it only contributes base fields.
+    - ``properties`` and ``required`` are filtered to remove those same base
+      fields.
+    - For update tools, ``required`` is dropped (partial merge semantics).
+    - JSON Schema meta keywords (``$schema``, ``$id``) are stripped.
+
+    Assumes ``schema`` has been loaded via ``load_schema`` so any base-entity
+    ``$ref`` has already been inlined. Allowing a raw on-disk schema through
+    here would leave a remote ``$ref`` that downstream serializers could try
+    to dereference over the network.
     """
-    # Inline base-entity $ref so tool schemas don't force a network fetch
-    # when clients (or FastMCP itself) try to dereference them.
-    result = inline_base_entity_ref(schema)
-
-    # Strip JSON Schema meta keywords not applicable inside tool input
+    result = copy.deepcopy(schema)
     result.pop("$schema", None)
     result.pop("$id", None)
 
-    # Base entity fields are auto-managed — drop them (and their inlined source)
-    # from the tool's input schema.
     if "allOf" in result:
-        filtered = [
-            sub
-            for sub in result["allOf"]
-            if not (isinstance(sub, dict) and sub.get("$id") == _BASE_ENTITY_REF_ID)
-        ]
-        # Drop any remaining allOf entry whose only purpose was the base schema
-        # by scrubbing base fields from every sub-schema's properties/required.
-        for sub in filtered:
-            if isinstance(sub, dict):
-                _strip_base_fields(sub, for_update=for_update)
-        if filtered:
-            result["allOf"] = filtered
-        else:
+        result["allOf"] = [sub for sub in result["allOf"] if not _is_base_entity_schema(sub)]
+        if not result["allOf"]:
             del result["allOf"]
 
-    _strip_base_fields(result, for_update=for_update)
-    return result
-
-
-_BASE_ENTITY_REF_ID = "https://upjack.dev/schemas/v1/upjack-entity.schema.json"
-
-
-def _strip_base_fields(schema: dict[str, Any], *, for_update: bool) -> None:
-    """Remove auto-managed base entity fields from a schema in place."""
-    if "properties" in schema:
-        schema["properties"] = {
-            k: v for k, v in schema["properties"].items() if k not in _BASE_ENTITY_KEYS
+    if "properties" in result:
+        result["properties"] = {
+            k: v for k, v in result["properties"].items() if k not in _BASE_ENTITY_KEYS
         }
 
     if for_update:
-        schema.pop("required", None)
-    elif "required" in schema:
-        schema["required"] = [r for r in schema["required"] if r not in _BASE_ENTITY_KEYS]
-        if not schema["required"]:
-            del schema["required"]
+        result.pop("required", None)
+    elif "required" in result:
+        result["required"] = [r for r in result["required"] if r not in _BASE_ENTITY_KEYS]
+        if not result["required"]:
+            del result["required"]
+
+    return result
+
+
+def _is_base_entity_schema(node: Any) -> bool:
+    """True if ``node`` is either a ``$ref`` to the base entity schema or the
+    inlined copy thereof (identified by its ``$id``)."""
+    if not isinstance(node, dict):
+        return False
+    return node.get("$ref") == BASE_ENTITY_REF or node.get("$id") == BASE_ENTITY_REF
 
 
 def _make_entity_tool(
@@ -260,17 +204,20 @@ def _register_entity_tools(
     entity_out = build_entity_output_schema(schema) if schema else None
     list_out = build_list_output_schema(schema) if schema else None
 
+    # Author-supplied examples on the entity schema are passed through to
+    # create / update tool schemas as in-context anchors for LLMs. This is
+    # pass-through, not generation — we don't invent values.
+    schema_examples = schema.get("examples") if isinstance(schema, dict) else None
+    author_examples = schema_examples if isinstance(schema_examples, list) else []
+
     # --- create_{name} ---
-    # Flatten entity JSON Schema directly as the tool's input schema — LLMs call
-    # with top-level kwargs (no 'data' wrapper).
     if schema:
         create_params = _prepare_entity_schema(schema)
     else:
         create_params = {"type": "object"}
     create_params.setdefault("type", "object")
-    create_example = _build_create_example(create_params)
-    if create_example is not None:
-        create_params["examples"] = [create_example]
+    if author_examples:
+        create_params["examples"] = copy.deepcopy(author_examples)
 
     mcp.add_tool(
         _make_entity_tool(
@@ -296,6 +243,7 @@ def _register_entity_tools(
                     },
                 },
                 "required": [id_param],
+                "examples": [{id_param: f"{prefix}_01HXXX"}],
             },
             handler=lambda args, _n=name, _p=id_param: app.get_entity(_n, args[_p]),
             output_schema=entity_out,
@@ -303,8 +251,6 @@ def _register_entity_tools(
     )
 
     # --- update_{name} ---
-    # Flatten entity schema (required stripped — partial merge) and add the id
-    # field at the top level. No 'data' wrapper.
     if schema:
         update_fields_schema = _prepare_entity_schema(schema, for_update=True)
     else:
@@ -312,22 +258,22 @@ def _register_entity_tools(
 
     raw_props = update_fields_schema.get("properties")
     extra_props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
-    update_properties: dict[str, Any] = {
-        id_param: {
-            "type": "string",
-            "description": f"{name} ID ({prefix}_...)",
-        },
-        **extra_props,
-    }
-
     update_params: dict[str, Any] = {
         "type": "object",
-        "properties": update_properties,
+        "properties": {
+            id_param: {
+                "type": "string",
+                "description": f"{name} ID ({prefix}_...)",
+            },
+            **extra_props,
+        },
         "required": [id_param],
     }
-    if create_example is not None:
+    if author_examples:
         update_params["examples"] = [
-            {id_param: f"{prefix}_01HXXX", **create_example},
+            {id_param: f"{prefix}_01HXXX", **example}
+            for example in author_examples
+            if isinstance(example, dict)
         ]
 
     mcp.add_tool(

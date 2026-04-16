@@ -548,17 +548,24 @@ class TestToolInputSchemas:
         assert input_schema["type"] == "object"
         assert "data" not in input_schema.get("properties", {})
 
-    def test_create_tool_includes_example(self, tmp_path):
-        """create_* tools should expose an example call derived from required fields."""
+    def test_create_tool_passes_through_schema_examples(self, tmp_path):
+        """create_* publishes ``examples`` from the entity schema verbatim.
+
+        Authors own the examples — no heuristic invents values. If the schema
+        has no examples, the tool schema has none either.
+        """
         entity_schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
                 "amount": {"type": "integer"},
-                "stage": {"type": "string", "enum": ["qualified", "proposal", "closed_won"]},
+                "stage": {"type": "string"},
             },
             "required": ["title", "amount", "stage"],
+            "examples": [
+                {"title": "Acme Q2 pilot", "amount": 25000, "stage": "qualified"},
+            ],
         }
         manifest_path = _make_manifest(
             tmp_path,
@@ -568,16 +575,12 @@ class TestToolInputSchemas:
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         input_schema = _run(_get_tool_input_schema(mcp, "create_deal"))
 
-        assert "examples" in input_schema
-        example = input_schema["examples"][0]
-        assert set(example.keys()) == {"title", "amount", "stage"}
-        assert isinstance(example["title"], str)
-        assert isinstance(example["amount"], int)
-        # Enum value wins over string heuristic
-        assert example["stage"] == "qualified"
+        assert input_schema["examples"] == [
+            {"title": "Acme Q2 pilot", "amount": 25000, "stage": "qualified"},
+        ]
 
-    def test_update_and_delete_tools_include_examples(self, tmp_path):
-        """update_* and delete_* tools should include examples showing the id + fields."""
+    def test_create_tool_omits_examples_when_schema_has_none(self, tmp_path):
+        """No heuristic fills in when the author hasn't provided examples."""
         entity_schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -590,15 +593,47 @@ class TestToolInputSchemas:
         )
         (tmp_path / "schemas" / "deal.schema.json").write_text(json.dumps(entity_schema))
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
+        input_schema = _run(_get_tool_input_schema(mcp, "create_deal"))
 
+        assert "examples" not in input_schema
+
+    def test_update_prepends_id_to_schema_examples(self, tmp_path):
+        """update_* examples are derived by prepending the entity id to each
+        schema example — keeps the author's data shape and adds what the tool
+        needs to identify the record."""
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"title": {"type": "string"}},
+            "required": ["title"],
+            "examples": [{"title": "Acme Q2 pilot"}],
+        }
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "deal", "plural": "deals", "prefix": "dl"}],
+        )
+        (tmp_path / "schemas" / "deal.schema.json").write_text(json.dumps(entity_schema))
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
         update_schema = _run(_get_tool_input_schema(mcp, "update_deal"))
-        assert "examples" in update_schema
-        assert "deal_id" in update_schema["examples"][0]
-        assert "title" in update_schema["examples"][0]
+
+        assert update_schema["examples"] == [
+            {"deal_id": "dl_01HXXX", "title": "Acme Q2 pilot"},
+        ]
+
+    def test_get_and_delete_tools_always_include_id_examples(self, tmp_path):
+        """id-only tools always publish a canonical id example — no author
+        input required because the shape is trivial."""
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "deal", "plural": "deals", "prefix": "dl"}],
+        )
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+
+        get_schema = _run(_get_tool_input_schema(mcp, "get_deal"))
+        assert get_schema["examples"] == [{"deal_id": "dl_01HXXX"}]
 
         delete_schema = _run(_get_tool_input_schema(mcp, "delete_deal"))
-        assert "examples" in delete_schema
-        assert list(delete_schema["examples"][0].keys()) == ["deal_id"]
+        assert delete_schema["examples"] == [{"deal_id": "dl_01HXXX"}]
 
 
 class TestToolOutputSchemas:
