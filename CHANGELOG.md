@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.5.0] - 2026-04-16
+## [0.5.1] - 2026-04-16
 
 Applies to both the Python and TypeScript libraries. The tool contract is now identical across both SDKs.
+
+The 0.5.0 version number was burned by an earlier TypeScript-only release (npm `upjack@0.5.0`) that bumped the version without applying the flat-kwarg contract change described below. To keep the "same version = same contract" invariant across SDKs, the corrected release ships as 0.5.1. `upjack@0.5.0` on npm has been deprecated; please upgrade to 0.5.1.
 
 ### Changed
 - **Breaking:** Auto-generated `create_{name}` and `update_{name}` MCP tools now take flat kwargs at the top level. The `{data: {...}}` wrapper has been removed — pass entity fields directly, e.g. `create_deal({"title": "...", "amount": 1000, "stage": "qualified"})`. Mixing the old and new shapes in the same tool list was measurably confusing LLMs and driving ~30% tool-call failure rates on the auto-generated CRUD surface. The flat form matches the hand-written tool convention and the FastMCP / MCP SDK idiom.
