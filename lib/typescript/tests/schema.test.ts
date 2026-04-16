@@ -136,18 +136,27 @@ describe("hydrateDefaults", () => {
     expect(data).toEqual({ name: "test" });
   });
 
-  it("handles allOf with $ref to base entity schema", () => {
-    const schema = {
-      allOf: [
-        { $ref: "https://upjack.dev/schemas/v1/upjack-entity.schema.json" },
-        {
-          type: "object",
-          properties: {
-            priority: { type: "string", default: "medium" },
+  it("handles inlined allOf base entity schema from loadSchema", () => {
+    // Schemas loaded via loadSchema() carry the base entity inlined under
+    // allOf — hydrateDefaults walks those inlined members to pull defaults
+    // (status, tags, relationships, etc.) alongside app-level defaults.
+    const tmpDir = mkdtempSync(join(tmpdir(), "upjack-schema-test-"));
+    const schemaPath = join(tmpDir, "contact.schema.json");
+    writeFileSync(
+      schemaPath,
+      JSON.stringify({
+        allOf: [
+          { $ref: "https://upjack.dev/schemas/v1/upjack-entity.schema.json" },
+          {
+            type: "object",
+            properties: {
+              priority: { type: "string", default: "medium" },
+            },
           },
-        },
-      ],
-    };
+        ],
+      }),
+    );
+    const schema = loadSchema(schemaPath);
     const data = { name: "test" };
     const result = hydrateDefaults(data, schema);
     // Base schema has defaults for created_by, status, tags, relationships

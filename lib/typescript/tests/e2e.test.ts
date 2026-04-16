@@ -522,7 +522,7 @@ describe("CRM Server E2E", () => {
   it("creates contact through tool", async () => {
     const result = await client.callTool({
       name: "create_contact",
-      arguments: { data: { first_name: "Sarah", last_name: "Chen" } },
+      arguments: { first_name: "Sarah", last_name: "Chen" },
     });
     const contact = callToolJson(result);
     expect((contact.id as string).startsWith("ct_")).toBe(true);
@@ -614,7 +614,7 @@ describe("Todo Server E2E", () => {
   it("creates task through tool", async () => {
     const result = await client.callTool({
       name: "create_task",
-      arguments: { data: { title: "Buy groceries" } },
+      arguments: { title: "Buy groceries" },
     });
     const task = callToolJson(result);
     expect((task.id as string).startsWith("tsk_")).toBe(true);
@@ -625,7 +625,7 @@ describe("Todo Server E2E", () => {
     // Create
     const createResult = await client.callTool({
       name: "create_task",
-      arguments: { data: { title: "Test task", priority: "high" } },
+      arguments: { title: "Test task", priority: "high" },
     });
     const created = callToolJson(createResult);
     const id = created.id as string;
@@ -634,7 +634,7 @@ describe("Todo Server E2E", () => {
     // Get
     const getResult = await client.callTool({
       name: "get_task",
-      arguments: { entity_id: id },
+      arguments: { task_id: id },
     });
     const fetched = callToolJson(getResult);
     expect(fetched.title).toBe("Test task");
@@ -642,7 +642,7 @@ describe("Todo Server E2E", () => {
     // Update
     const updateResult = await client.callTool({
       name: "update_task",
-      arguments: { entity_id: id, data: { priority: "critical" } },
+      arguments: { task_id: id, priority: "critical" },
     });
     const updated = callToolJson(updateResult);
     expect(updated.priority).toBe("critical");
@@ -669,7 +669,7 @@ describe("Todo Server E2E", () => {
     // Delete
     const deleteResult = await client.callTool({
       name: "delete_task",
-      arguments: { entity_id: id },
+      arguments: { task_id: id },
     });
     const deleted = callToolJson(deleteResult);
     expect(deleted.status).toBe("deleted");

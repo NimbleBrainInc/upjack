@@ -8,10 +8,10 @@
  * Opt-in via "activities": true in the manifest's upjack extension.
  */
 
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EntityDefinition } from "./entity.js";
+import { loadSchema } from "./schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = join(__dirname, "schemas", "activity.schema.json");
@@ -23,6 +23,7 @@ export const ACTIVITY_ENTITY_DEF: EntityDefinition = {
   schema: SCHEMA_PATH,
 };
 
+/** Load the built-in activity schema (with base-entity $ref inlined). */
 export function getActivitySchema(): Record<string, unknown> {
-  return JSON.parse(readFileSync(SCHEMA_PATH, "utf-8"));
+  return loadSchema(SCHEMA_PATH);
 }

@@ -206,9 +206,16 @@ def _register_entity_tools(
 
     # Author-supplied examples on the entity schema are passed through to
     # create / update tool schemas as in-context anchors for LLMs. This is
-    # pass-through, not generation — we don't invent values.
+    # pass-through, not generation — we don't invent values. Base entity
+    # fields are auto-managed, so we strip them from examples even if the
+    # author included them.
     schema_examples = schema.get("examples") if isinstance(schema, dict) else None
-    author_examples = schema_examples if isinstance(schema_examples, list) else []
+    raw_examples = schema_examples if isinstance(schema_examples, list) else []
+    author_examples = [
+        {k: v for k, v in ex.items() if k not in _BASE_ENTITY_KEYS}
+        for ex in raw_examples
+        if isinstance(ex, dict)
+    ]
 
     # --- create_{name} ---
     if schema:
@@ -271,9 +278,7 @@ def _register_entity_tools(
     }
     if author_examples:
         update_params["examples"] = [
-            {id_param: f"{prefix}_01HXXX", **example}
-            for example in author_examples
-            if isinstance(example, dict)
+            {id_param: f"{prefix}_01HXXX", **example} for example in author_examples
         ]
 
     mcp.add_tool(
@@ -281,7 +286,9 @@ def _register_entity_tools(
             name=f"update_{name}",
             description=(
                 f"Update a {name} by ID. Merges fields by default — pass any subset "
-                f"of fields to change. {id_hint}."
+                f"of fields to change. Unknown fields are merged onto the entity "
+                f"as-is (the schema does not enforce additionalProperties=false). "
+                f"{id_hint}."
             ),
             parameters=update_params,
             handler=lambda args, _n=name, _p=id_param: app.update_entity(

@@ -579,6 +579,42 @@ class TestToolInputSchemas:
             {"title": "Acme Q2 pilot", "amount": 25000, "stage": "qualified"},
         ]
 
+    def test_author_examples_strip_framework_managed_fields(self, tmp_path):
+        """Base entity fields (id, type, created_at, etc.) in author examples
+        must NOT leak into the published tool schema — framework manages those,
+        and an LLM would incorrectly try to send them.
+        """
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"title": {"type": "string"}},
+            "required": ["title"],
+            "examples": [
+                {
+                    "id": "dl_01HXXX",
+                    "type": "deal",
+                    "created_at": "2026-04-16T00:00:00Z",
+                    "status": "active",
+                    "tags": ["pilot"],
+                    "title": "Acme Q2 pilot",
+                }
+            ],
+        }
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "deal", "plural": "deals", "prefix": "dl"}],
+        )
+        (tmp_path / "schemas" / "deal.schema.json").write_text(json.dumps(entity_schema))
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+
+        create_schema = _run(_get_tool_input_schema(mcp, "create_deal"))
+        assert create_schema["examples"] == [{"title": "Acme Q2 pilot"}]
+
+        update_schema = _run(_get_tool_input_schema(mcp, "update_deal"))
+        assert update_schema["examples"] == [
+            {"deal_id": "dl_01HXXX", "title": "Acme Q2 pilot"},
+        ]
+
     def test_create_tool_omits_examples_when_schema_has_none(self, tmp_path):
         """No heuristic fills in when the author hasn't provided examples."""
         entity_schema = {

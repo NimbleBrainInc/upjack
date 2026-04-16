@@ -19,6 +19,8 @@ import { UpjackApp } from "./app.js";
 import type { UpjackManifestExtension } from "./app.js";
 import { rebuildIndex } from "./relations.js";
 import {
+  BASE_ENTITY_MARKER,
+  BASE_ENTITY_REF,
   buildEntityOutputSchema,
   buildListOutputSchema,
   loadSchema,
@@ -47,13 +49,42 @@ interface JsonSchema {
   type?: string;
   properties?: Record<string, unknown>;
   required?: string[];
+  allOf?: Array<Record<string, unknown>>;
+  examples?: unknown[];
   $schema?: string;
   $id?: string;
   [key: string]: unknown;
 }
 
+function isBaseEntitySchema(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const obj = node as Record<string, unknown>;
+  // Match either the raw $ref (schemas that bypassed loadSchema) or the
+  // marker we attach during inlining (the common path).
+  return obj.$ref === BASE_ENTITY_REF || obj[BASE_ENTITY_MARKER] === true;
+}
+
+/**
+ * Project an app entity schema onto an MCP tool input schema.
+ *
+ * Tool inputs carry only user-controlled fields — framework-managed base
+ * fields (id, type, timestamps, status, tags, source, relationships) are
+ * excluded. Assumes `schema` has been loaded via `loadSchema` so any
+ * base-entity `$ref` has already been inlined.
+ */
 function prepareEntitySchema(schema: JsonSchema, opts?: { forUpdate?: boolean }): JsonSchema {
-  const { $schema: _, $id: __, ...result } = structuredClone(schema);
+  const { $schema: _s, $id: _i, examples: _e, ...initial } = structuredClone(schema);
+  let result = initial;
+
+  if (Array.isArray(result.allOf)) {
+    const filteredAllOf = result.allOf.filter((sub) => !isBaseEntitySchema(sub));
+    if (filteredAllOf.length === 0) {
+      const { allOf: _dropped, ...rest } = result;
+      result = rest;
+    } else {
+      result.allOf = filteredAllOf;
+    }
+  }
 
   if (result.properties) {
     result.properties = Object.fromEntries(
@@ -67,12 +98,12 @@ function prepareEntitySchema(schema: JsonSchema, opts?: { forUpdate?: boolean })
   }
 
   if (result.required) {
-    const filtered = result.required.filter((r) => !BASE_ENTITY_KEYS.has(r));
-    if (filtered.length === 0) {
+    const filteredRequired = result.required.filter((r) => !BASE_ENTITY_KEYS.has(r));
+    if (filteredRequired.length === 0) {
       const { required: _req, ...rest } = result;
       return rest;
     }
-    result.required = filtered;
+    result.required = filteredRequired;
   }
 
   return result;
@@ -143,11 +174,50 @@ function buildEntityTools(
   const plural = entityDef.plural ?? `${name}s`;
   const prefix = entityDef.prefix;
   const idHint = `IDs start with ${prefix}_`;
+  const idParam = `${name}_id`;
+  const idPlaceholder = `${prefix}_01HXXX`;
 
-  const dataSchema = schema ? prepareEntitySchema(schema as JsonSchema) : { type: "object" };
-  const updateDataSchema = schema
-    ? prepareEntitySchema(schema as JsonSchema, { forUpdate: true })
+  // Base schemas for create/update — flat, no `data` wrapper
+  const createSchema: Record<string, unknown> = schema
+    ? (prepareEntitySchema(schema as JsonSchema) as Record<string, unknown>)
     : { type: "object" };
+  if (!("type" in createSchema)) createSchema.type = "object";
+
+  const updateFieldsSchema = schema
+    ? (prepareEntitySchema(schema as JsonSchema, { forUpdate: true }) as Record<string, unknown>)
+    : { type: "object" };
+  const updateExtraProps = (updateFieldsSchema.properties ?? {}) as Record<string, unknown>;
+
+  const updateSchema: Record<string, unknown> = {
+    type: "object",
+    properties: {
+      [idParam]: { type: "string", description: `${name} ID (${prefix}_...)` },
+      ...updateExtraProps,
+    },
+    required: [idParam],
+  };
+
+  // Author-supplied examples: pass-through, with base entity fields stripped
+  // (those are auto-managed and shouldn't appear in tool examples).
+  const rawExamples = Array.isArray((schema as JsonSchema | undefined)?.examples)
+    ? ((schema as JsonSchema).examples as unknown[])
+    : [];
+  const authorExamples: Array<Record<string, unknown>> = [];
+  for (const ex of rawExamples) {
+    if (ex && typeof ex === "object" && !Array.isArray(ex)) {
+      const filtered = Object.fromEntries(
+        Object.entries(ex as Record<string, unknown>).filter(([k]) => !BASE_ENTITY_KEYS.has(k)),
+      );
+      authorExamples.push(filtered);
+    }
+  }
+  if (authorExamples.length > 0) {
+    createSchema.examples = structuredClone(authorExamples);
+    updateSchema.examples = authorExamples.map((ex) => ({
+      [idParam]: idPlaceholder,
+      ...ex,
+    }));
+  }
 
   const entityOut = schema ? buildEntityOutputSchema(schema) : undefined;
   const listOut = schema ? buildListOutputSchema(schema) : undefined;
@@ -156,11 +226,7 @@ function buildEntityTools(
     {
       name: `create_${name}`,
       description: `Create a new ${name}. ${idHint}.`,
-      inputSchema: {
-        type: "object",
-        properties: { data: dataSchema },
-        required: ["data"],
-      },
+      inputSchema: createSchema,
       ...(entityOut ? { outputSchema: entityOut } : {}),
     },
     {
@@ -169,23 +235,17 @@ function buildEntityTools(
       inputSchema: {
         type: "object",
         properties: {
-          entity_id: { type: "string", description: `${name} ID (${prefix}_...)` },
+          [idParam]: { type: "string", description: `${name} ID (${prefix}_...)` },
         },
-        required: ["entity_id"],
+        required: [idParam],
+        examples: [{ [idParam]: idPlaceholder }],
       },
       ...(entityOut ? { outputSchema: entityOut } : {}),
     },
     {
       name: `update_${name}`,
-      description: `Update a ${name} by ID. Merges fields by default. ${idHint}.`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          entity_id: { type: "string", description: `${name} ID (${prefix}_...)` },
-          data: updateDataSchema,
-        },
-        required: ["entity_id", "data"],
-      },
+      description: `Update a ${name} by ID. Merges fields by default — pass any subset of fields to change. Unknown fields are merged onto the entity as-is (the schema does not enforce additionalProperties=false). ${idHint}.`,
+      inputSchema: updateSchema,
       ...(entityOut ? { outputSchema: entityOut } : {}),
     },
     {
@@ -222,25 +282,27 @@ function buildEntityTools(
       inputSchema: {
         type: "object",
         properties: {
-          entity_id: { type: "string", description: `${name} ID` },
+          [idParam]: { type: "string", description: `${name} ID (${prefix}_...)` },
           hard: { type: "boolean", default: false, description: "Hard delete" },
         },
-        required: ["entity_id"],
+        required: [idParam],
+        examples: [{ [idParam]: idPlaceholder }],
       },
       ...(entityOut ? { outputSchema: entityOut } : {}),
     },
   ];
 
   const handlers: Record<string, ToolHandler> = {
-    [`create_${name}`]: (args) =>
-      app.createEntity(name, (args.data ?? {}) as Record<string, unknown>),
-    [`get_${name}`]: (args) => app.getEntity(name, args.entity_id as string),
-    [`update_${name}`]: (args) =>
-      app.updateEntity(
-        name,
-        args.entity_id as string,
-        (args.data ?? {}) as Record<string, unknown>,
-      ),
+    [`create_${name}`]: (args) => app.createEntity(name, args),
+    [`get_${name}`]: (args) => app.getEntity(name, args[idParam] as string),
+    [`update_${name}`]: (args) => {
+      const id = args[idParam] as string;
+      const rest: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (k !== idParam) rest[k] = v;
+      }
+      return app.updateEntity(name, id, rest);
+    },
     [`list_${plural}`]: (args) =>
       wrapList(
         app.listEntities(name, (args.status as string) ?? "active", (args.limit as number) ?? 50),
@@ -255,7 +317,7 @@ function buildEntityTools(
         }),
       ),
     [`delete_${name}`]: (args) =>
-      app.deleteEntity(name, args.entity_id as string, (args.hard as boolean) ?? false),
+      app.deleteEntity(name, args[idParam] as string, (args.hard as boolean) ?? false),
   };
 
   return { definitions, handlers };
