@@ -17,6 +17,33 @@ from upjack.schema import (
 )
 
 
+class TestSdkParity:
+    """Pin the cross-SDK contract so Python and TypeScript stay aligned.
+
+    The TS SDK has a mirror test (see ``lib/typescript/tests/schema.test.ts``
+    ``SDK parity``) asserting the same canonical set. If you change one,
+    change the other — and update CHANGELOG to note the tool-schema delta.
+    """
+
+    def test_base_entity_fields_canonical_set(self):
+        from upjack.schema import BASE_ENTITY_FIELDS
+
+        assert BASE_ENTITY_FIELDS == frozenset(
+            {
+                "id",
+                "type",
+                "version",
+                "created_at",
+                "updated_at",
+                "created_by",
+                "status",
+                "tags",
+                "source",
+                "relationships",
+            }
+        )
+
+
 class TestLoadSchema:
     def test_loads_valid_schema(self, tmp_path):
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}

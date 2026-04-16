@@ -22,6 +22,8 @@ from upjack.activity import ACTIVITY_ENTITY_DEF
 from upjack.app import UpjackApp
 from upjack.relations import rebuild_index
 from upjack.schema import (
+    BASE_ENTITY_FIELDS,
+    BASE_ENTITY_MARKER,
     BASE_ENTITY_REF,
     build_entity_output_schema,
     build_list_output_schema,
@@ -29,20 +31,10 @@ from upjack.schema import (
     validate_schema_change,
 )
 
-# Base entity fields auto-managed by the framework — stripped from tool input schemas
-_BASE_ENTITY_KEYS = frozenset(
-    {
-        "id",
-        "type",
-        "version",
-        "created_at",
-        "updated_at",
-        "created_by",
-        "status",
-        "tags",
-        "source",
-    }
-)
+# Alias for readability at call sites — this is the canonical set of
+# framework-managed fields, imported from upjack.schema so both the server
+# module here and the parity tests reference one source of truth.
+_BASE_ENTITY_KEYS = BASE_ENTITY_FIELDS
 
 
 def _wrap_list(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
@@ -99,11 +91,12 @@ def _prepare_entity_schema(schema: dict[str, Any], *, for_update: bool = False) 
 
 
 def _is_base_entity_schema(node: Any) -> bool:
-    """True if ``node`` is either a ``$ref`` to the base entity schema or the
-    inlined copy thereof (identified by its ``$id``)."""
+    """True if ``node`` is either a ``$ref`` to the base entity schema (raw
+    on-disk form) or an inlined copy carrying ``BASE_ENTITY_MARKER`` (the form
+    produced by ``load_schema``)."""
     if not isinstance(node, dict):
         return False
-    return node.get("$ref") == BASE_ENTITY_REF or node.get("$id") == BASE_ENTITY_REF
+    return node.get("$ref") == BASE_ENTITY_REF or node.get(BASE_ENTITY_MARKER) is True
 
 
 def _make_entity_tool(
@@ -291,6 +284,12 @@ def _register_entity_tools(
                 f"{id_hint}."
             ),
             parameters=update_params,
+            # NB: we strip the id param from the payload before merging.
+            # If an app ever declares a top-level entity property literally
+            # named ``{entity_name}_id`` (e.g. ``user_id`` on a ``user``
+            # entity), it becomes unreachable via the update tool. Avoid
+            # that collision in your schema — or use a differently-named
+            # external-id field.
             handler=lambda args, _n=name, _p=id_param: app.update_entity(
                 _n, args[_p], {k: v for k, v in args.items() if k != _p}
             ),
@@ -425,19 +424,9 @@ _TYPE_VALIDATORS: dict[str, type | tuple[type, ...]] = {
 
 _FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
-_BASE_ENTITY_FIELD_NAMES = frozenset(
-    {
-        "id",
-        "type",
-        "version",
-        "created_at",
-        "updated_at",
-        "created_by",
-        "status",
-        "tags",
-        "relationships",
-    }
-)
+# Reserved field names for the add_field tool — any name matching one of the
+# framework-managed fields is rejected. Same set as the tool-input strip list.
+_BASE_ENTITY_FIELD_NAMES = BASE_ENTITY_FIELDS
 
 
 def _register_add_field_tool(

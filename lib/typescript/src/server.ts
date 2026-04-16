@@ -19,6 +19,7 @@ import { UpjackApp } from "./app.js";
 import type { UpjackManifestExtension } from "./app.js";
 import { rebuildIndex } from "./relations.js";
 import {
+  BASE_ENTITY_FIELDS,
   BASE_ENTITY_MARKER,
   BASE_ENTITY_REF,
   buildEntityOutputSchema,
@@ -27,19 +28,10 @@ import {
   validateSchemaChange,
 } from "./schema.js";
 
-// Base entity fields auto-managed by the framework — stripped from tool input schemas
-const BASE_ENTITY_KEYS = new Set([
-  "id",
-  "type",
-  "version",
-  "created_at",
-  "updated_at",
-  "created_by",
-  "status",
-  "tags",
-  "source",
-  "relationships",
-]);
+// Re-export under the local alias used throughout this module. Importing
+// the single canonical set from schema.ts keeps the Python and TypeScript
+// SDKs in lockstep — a parity test ensures the two sets stay aligned.
+const BASE_ENTITY_KEYS = BASE_ENTITY_FIELDS;
 
 // ---------------------------------------------------------------------------
 // Schema preparation
@@ -296,6 +288,10 @@ function buildEntityTools(
     [`create_${name}`]: (args) => app.createEntity(name, args),
     [`get_${name}`]: (args) => app.getEntity(name, args[idParam] as string),
     [`update_${name}`]: (args) => {
+      // NB: we strip the id param from the payload before merging. If an app
+      // ever declares a top-level property literally named `{entity_name}_id`
+      // (e.g. `user_id` on a `user` entity), it becomes unreachable via the
+      // update tool. Avoid that collision in your schema.
       const id = args[idParam] as string;
       const rest: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(args)) {
@@ -502,18 +498,9 @@ function buildActivityTools(app: UpjackApp): {
 // ---------------------------------------------------------------------------
 
 const FIELD_NAME_RE = /^[a-z][a-z0-9_]*$/;
-const BASE_ENTITY_FIELD_NAMES = new Set([
-  "id",
-  "type",
-  "version",
-  "created_at",
-  "updated_at",
-  "created_by",
-  "status",
-  "tags",
-  "source",
-  "relationships",
-]);
+// Reserved field names for add_field — same canonical set as the tool-input
+// strip list.
+const BASE_ENTITY_FIELD_NAMES = BASE_ENTITY_FIELDS;
 
 // Fields stripped from seed data before create — matches Python behavior.
 // Preserves relationships and tags so seed data can set up a connected graph.

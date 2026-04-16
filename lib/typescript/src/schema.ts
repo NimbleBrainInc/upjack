@@ -30,6 +30,25 @@ export const BASE_ENTITY_REF = "https://upjack.dev/schemas/v1/upjack-entity.sche
  */
 export const BASE_ENTITY_MARKER = "x-upjack-base-entity";
 
+/**
+ * Framework-managed base entity fields — the canonical set used across both
+ * SDKs. Stripped from tool input schemas (auto-managed, not user-controlled)
+ * and also filtered out of author-supplied examples so the published tool
+ * schema doesn't instruct LLMs to send them.
+ */
+export const BASE_ENTITY_FIELDS: ReadonlySet<string> = new Set([
+  "id",
+  "type",
+  "version",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "status",
+  "tags",
+  "source",
+  "relationships",
+]);
+
 const BASE_SCHEMA_PATH = join(__dirname, "schemas", "upjack-entity.schema.json");
 const BASE_SCHEMA = JSON.parse(readFileSync(BASE_SCHEMA_PATH, "utf-8")) as Record<string, unknown>;
 

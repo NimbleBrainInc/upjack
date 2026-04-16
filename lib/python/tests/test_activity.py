@@ -7,7 +7,7 @@ import pytest
 
 from upjack.activity import ACTIVITY_ENTITY_DEF, get_activity_schema
 from upjack.app import UpjackApp
-from upjack.schema import BASE_ENTITY_REF
+from upjack.schema import BASE_ENTITY_MARKER
 
 NAMESPACE = "apps/test"
 ENTITIES = [
@@ -48,11 +48,13 @@ class TestActivitySchema:
         needs to dereference it over the network."""
         schema = get_activity_schema()
         assert "allOf" in schema
-        # No unresolved $refs
+        # No unresolved $refs and no leftover $id (both trip up validators
+        # that auto-register schemas by identifier).
         for entry in schema["allOf"]:
             assert "$ref" not in entry, f"Unresolved $ref in allOf: {entry.get('$ref')}"
-        # The base entity member is inlined and keeps its $id as a marker
-        base = next((e for e in schema["allOf"] if e.get("$id") == BASE_ENTITY_REF), None)
+            assert "$id" not in entry, f"Stray $id in inlined allOf: {entry.get('$id')}"
+        # The inlined base member carries our non-standard marker
+        base = next((e for e in schema["allOf"] if e.get(BASE_ENTITY_MARKER) is True), None)
         assert base is not None, "base entity schema not inlined into allOf"
         assert "id" in base["properties"]
         assert "created_at" in base["properties"]

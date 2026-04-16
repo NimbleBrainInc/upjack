@@ -19,6 +19,31 @@ _SCHEMAS_DIR = Path(__file__).parent / "schemas"
 # their own fields on top of the framework-managed ones.
 BASE_ENTITY_REF = "https://upjack.dev/schemas/v1/upjack-entity.schema.json"
 
+# Non-standard marker attached to the inlined base-entity schema so downstream
+# code can identify it without the ``$ref`` or ``$id`` (both cause problems for
+# JSON Schema validators that auto-register schemas by ``$id``). This matches
+# the TypeScript SDK's convention for tool-schema portability.
+BASE_ENTITY_MARKER = "x-upjack-base-entity"
+
+# Framework-managed base entity fields — the canonical set used across both
+# SDKs. Stripped from tool input schemas (auto-managed, not user-controlled)
+# and also filtered out of author-supplied examples so the published tool
+# schema doesn't instruct LLMs to send them.
+BASE_ENTITY_FIELDS = frozenset(
+    {
+        "id",
+        "type",
+        "version",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "status",
+        "tags",
+        "source",
+        "relationships",
+    }
+)
+
 # The bundled copy of the base entity schema, loaded once at import time.
 _BASE_SCHEMA = json.loads((_SCHEMAS_DIR / "upjack-entity.schema.json").read_text())
 _BASE_RESOURCE = referencing.Resource.from_contents(
@@ -44,10 +69,12 @@ def _inline_base_entity_ref(node: Any) -> None:
     """Walk a schema in place, replacing every ``$ref: BASE_ENTITY_REF`` dict
     with a deep copy of the bundled base schema contents.
 
-    The inlined copy keeps its ``$id`` so downstream consumers can identify
-    it (e.g., to filter it out when projecting the schema onto a tool input
-    that excludes base fields). ``$schema`` is dropped — it's a meta keyword
-    that doesn't belong inside an ``allOf`` member.
+    ``$schema`` and ``$id`` are dropped from the inlined copy — the shared
+    ``$id`` would clash with validator registries that auto-register schemas
+    by identifier (this is what bites AJV on the TypeScript side). A
+    non-standard ``BASE_ENTITY_MARKER`` key is attached so downstream code
+    can still identify the inlined base without those identifiers. Both SDKs
+    use this convention so tool schemas published over MCP are byte-aligned.
     """
     if isinstance(node, dict):
         all_of = node.get("allOf")
@@ -56,6 +83,8 @@ def _inline_base_entity_ref(node: Any) -> None:
                 if isinstance(sub, dict) and sub.get("$ref") == BASE_ENTITY_REF:
                     inlined = copy.deepcopy(_BASE_SCHEMA)
                     inlined.pop("$schema", None)
+                    inlined.pop("$id", None)
+                    inlined[BASE_ENTITY_MARKER] = True
                     all_of[i] = inlined
         for value in node.values():
             _inline_base_entity_ref(value)

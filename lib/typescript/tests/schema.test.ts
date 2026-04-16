@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BASE_ENTITY_FIELDS,
   buildEntityOutputSchema,
   buildListOutputSchema,
   hydrateDefaults,
@@ -12,6 +13,29 @@ import {
   validateEntity,
   validateSchemaChange,
 } from "../src/schema.js";
+
+describe("SDK parity", () => {
+  // Pin the cross-SDK contract so Python and TypeScript stay aligned. The
+  // Python SDK has a mirror test (see tests/test_schema.py TestSdkParity)
+  // asserting the same canonical set. If you change one, change the other —
+  // and update CHANGELOG to note the tool-schema delta.
+  it("BASE_ENTITY_FIELDS is the canonical set (matches Python)", () => {
+    expect(new Set(BASE_ENTITY_FIELDS)).toEqual(
+      new Set([
+        "id",
+        "type",
+        "version",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "status",
+        "tags",
+        "source",
+        "relationships",
+      ]),
+    );
+  });
+});
 
 describe("loadSchema", () => {
   it("loads a valid schema file", () => {
