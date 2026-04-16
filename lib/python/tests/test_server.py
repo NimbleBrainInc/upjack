@@ -430,10 +430,10 @@ class TestCreateServer:
 
 
 class TestToolInputSchemas:
-    """Verify that create/update tools expose full entity JSON Schema."""
+    """Verify that create/update tools expose the entity JSON Schema flat (no `data` wrapper)."""
 
     def test_create_tool_exposes_entity_schema(self, tmp_path):
-        """create_* tools should have the entity schema nested under data."""
+        """create_* tools should expose entity fields at the top level."""
         entity_schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -467,26 +467,26 @@ class TestToolInputSchemas:
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         input_schema = _run(_get_tool_input_schema(mcp, "create_campaign"))
 
-        # data property should contain the entity schema (minus base fields)
-        data_schema = input_schema["properties"]["data"]
-        assert "name" in data_schema["properties"]
-        assert data_schema["properties"]["name"]["description"] == "Campaign name"
-        assert "score" in data_schema["properties"]
-        assert data_schema["properties"]["score"]["minimum"] == 0
+        # Fields are top-level — no `data` wrapper
+        assert "data" not in input_schema["properties"]
+        assert "name" in input_schema["properties"]
+        assert input_schema["properties"]["name"]["description"] == "Campaign name"
+        assert "score" in input_schema["properties"]
+        assert input_schema["properties"]["score"]["minimum"] == 0
         # Nested structure preserved
-        assert "emotional_drivers" in data_schema["properties"]
-        fear = data_schema["properties"]["emotional_drivers"]["properties"]["fear"]
+        assert "emotional_drivers" in input_schema["properties"]
+        fear = input_schema["properties"]["emotional_drivers"]["properties"]["fear"]
         assert "theme" in fear["properties"]
         # Base fields stripped
-        assert "id" not in data_schema["properties"]
-        assert "type" not in data_schema["properties"]
+        assert "id" not in input_schema["properties"]
+        assert "type" not in input_schema["properties"]
         # $schema meta keyword stripped
-        assert "$schema" not in data_schema
+        assert "$schema" not in input_schema
         # Required preserved (minus base fields)
-        assert data_schema["required"] == ["name"]
+        assert input_schema["required"] == ["name"]
 
-    def test_update_tool_has_no_required_in_data(self, tmp_path):
-        """update_* tools should have all data fields optional (partial merge)."""
+    def test_update_tool_has_flat_fields_and_id(self, tmp_path):
+        """update_* tools should have the id and all entity fields flat at the top level."""
         entity_schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -512,15 +512,13 @@ class TestToolInputSchemas:
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         input_schema = _run(_get_tool_input_schema(mcp, "update_item"))
 
-        # Top-level requires item_id and data
+        # Flat top-level: item_id (required), name, score (all optional)
+        assert "data" not in input_schema["properties"]
         assert "item_id" in input_schema["properties"]
-        assert set(input_schema["required"]) == {"item_id", "data"}
-        # Data schema has no required (partial update)
-        data_schema = input_schema["properties"]["data"]
-        assert "required" not in data_schema
-        # But fields are still described
-        assert "name" in data_schema["properties"]
-        assert "score" in data_schema["properties"]
+        assert "name" in input_schema["properties"]
+        assert "score" in input_schema["properties"]
+        # Only the id is required (partial merge for everything else)
+        assert input_schema["required"] == ["item_id"]
 
     def test_create_tool_falls_back_to_opaque_without_schema(self, tmp_path):
         """Without a schema, create_* should still work with opaque object."""
@@ -546,7 +544,61 @@ class TestToolInputSchemas:
         )
         mcp = create_server(manifest_path, root=tmp_path / "workspace")
         input_schema = _run(_get_tool_input_schema(mcp, "create_thing"))
-        assert input_schema["properties"]["data"]["type"] == "object"
+        # No schema → opaque object (no properties), still no `data` wrapper
+        assert input_schema["type"] == "object"
+        assert "data" not in input_schema.get("properties", {})
+
+    def test_create_tool_includes_example(self, tmp_path):
+        """create_* tools should expose an example call derived from required fields."""
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "amount": {"type": "integer"},
+                "stage": {"type": "string", "enum": ["qualified", "proposal", "closed_won"]},
+            },
+            "required": ["title", "amount", "stage"],
+        }
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "deal", "plural": "deals", "prefix": "dl"}],
+        )
+        (tmp_path / "schemas" / "deal.schema.json").write_text(json.dumps(entity_schema))
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+        input_schema = _run(_get_tool_input_schema(mcp, "create_deal"))
+
+        assert "examples" in input_schema
+        example = input_schema["examples"][0]
+        assert set(example.keys()) == {"title", "amount", "stage"}
+        assert isinstance(example["title"], str)
+        assert isinstance(example["amount"], int)
+        # Enum value wins over string heuristic
+        assert example["stage"] == "qualified"
+
+    def test_update_and_delete_tools_include_examples(self, tmp_path):
+        """update_* and delete_* tools should include examples showing the id + fields."""
+        entity_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"title": {"type": "string"}},
+            "required": ["title"],
+        }
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "deal", "plural": "deals", "prefix": "dl"}],
+        )
+        (tmp_path / "schemas" / "deal.schema.json").write_text(json.dumps(entity_schema))
+        mcp = create_server(manifest_path, root=tmp_path / "workspace")
+
+        update_schema = _run(_get_tool_input_schema(mcp, "update_deal"))
+        assert "examples" in update_schema
+        assert "deal_id" in update_schema["examples"][0]
+        assert "title" in update_schema["examples"][0]
+
+        delete_schema = _run(_get_tool_input_schema(mcp, "delete_deal"))
+        assert "examples" in delete_schema
+        assert list(delete_schema["examples"][0].keys()) == ["deal_id"]
 
 
 class TestToolOutputSchemas:
@@ -626,7 +678,7 @@ class TestToolOutputSchemas:
 
         async def check():
             async with Client(mcp) as client:
-                result = await client.call_tool("create_item", {"data": {"name": "Test"}})
+                result = await client.call_tool("create_item", {"name": "Test"})
                 # structuredContent is set on CallToolResult
                 assert result.structured_content is not None
                 assert result.structured_content["name"] == "Test"
@@ -651,7 +703,7 @@ class TestServerToolsWork:
         return create_server(manifest_path, root=workspace)
 
     def test_create_and_get_roundtrip(self, mcp):
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Widget"}}))
+        created = _run(_call_tool(mcp, "create_item", {"name": "Widget"}))
         assert created["id"].startswith("it_")
         assert created["name"] == "Widget"
         assert created["type"] == "item"
@@ -661,14 +713,15 @@ class TestServerToolsWork:
         assert fetched["name"] == "Widget"
 
     def test_update_merges_fields(self, mcp):
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Old"}}))
+        created = _run(_call_tool(mcp, "create_item", {"name": "Old"}))
         updated = _run(
             _call_tool(
                 mcp,
                 "update_item",
                 {
                     "item_id": created["id"],
-                    "data": {"name": "New", "extra": "field"},
+                    "name": "New",
+                    "extra": "field",
                 },
             )
         )
@@ -676,8 +729,8 @@ class TestServerToolsWork:
         assert updated["extra"] == "field"
 
     def test_list_returns_created_entities(self, mcp):
-        _run(_call_tool(mcp, "create_item", {"data": {"name": "A"}}))
-        _run(_call_tool(mcp, "create_item", {"data": {"name": "B"}}))
+        _run(_call_tool(mcp, "create_item", {"name": "A"}))
+        _run(_call_tool(mcp, "create_item", {"name": "B"}))
 
         result = _run(_call_tool(mcp, "list_items", {}))
         assert result["count"] == 2
@@ -686,8 +739,8 @@ class TestServerToolsWork:
         assert "limit" in result
 
     def test_search_finds_by_text(self, mcp):
-        _run(_call_tool(mcp, "create_item", {"data": {"name": "Alpha"}}))
-        _run(_call_tool(mcp, "create_item", {"data": {"name": "Beta"}}))
+        _run(_call_tool(mcp, "create_item", {"name": "Alpha"}))
+        _run(_call_tool(mcp, "create_item", {"name": "Beta"}))
 
         result = _run(_call_tool(mcp, "search_items", {"query": "Alpha"}))
         assert result["count"] == 1
@@ -696,7 +749,7 @@ class TestServerToolsWork:
         assert "limit" in result
 
     def test_delete_soft(self, mcp):
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Doomed"}}))
+        created = _run(_call_tool(mcp, "create_item", {"name": "Doomed"}))
         result = _run(_call_tool(mcp, "delete_item", {"item_id": created["id"]}))
         assert result["status"] == "deleted"
 
@@ -705,7 +758,7 @@ class TestServerToolsWork:
         assert result["count"] == 0
 
     def test_delete_hard(self, mcp):
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Gone"}}))
+        created = _run(_call_tool(mcp, "create_item", {"name": "Gone"}))
         _run(_call_tool(mcp, "delete_item", {"item_id": created["id"], "hard": True}))
 
         # Hard-deleted entities are gone from disk entirely
@@ -721,8 +774,8 @@ class TestServerToolsWork:
 class TestJsonStringDeserialization:
     """Raw Tool subclasses bypass FastMCP's Pydantic deserialization.
 
-    Over stdio transport, object arguments may arrive as JSON strings instead
-    of parsed dicts.  The server must handle both forms.
+    Over stdio transport, object/array arguments may arrive as JSON strings
+    instead of parsed dicts/lists.  The server must handle both forms.
     """
 
     @pytest.fixture
@@ -735,36 +788,71 @@ class TestJsonStringDeserialization:
         workspace.mkdir()
         return create_server(manifest_path, root=workspace)
 
-    def test_create_with_data_as_json_string(self, mcp):
-        """create_* should work when data arrives as a JSON string."""
-        data_str = json.dumps({"name": "StringWidget"})
-        created = _run(_call_tool(mcp, "create_item", {"data": data_str}))
-        assert created["name"] == "StringWidget"
-        assert created["id"].startswith("it_")
+    def test_create_with_array_arg_as_json_string(self, mcp):
+        """create_* should parse array arguments that arrive as JSON strings."""
+        rels_str = json.dumps([{"rel": "belongs_to", "target": "it_abc"}])
+        created = _run(
+            _call_tool(mcp, "create_item", {"name": "Widget", "relationships": rels_str})
+        )
+        assert created["name"] == "Widget"
+        # The string should have been parsed into an actual list of dicts
+        assert isinstance(created.get("relationships"), list)
+        assert created["relationships"][0]["rel"] == "belongs_to"
 
-    def test_update_with_data_as_json_string(self, mcp):
-        """update_* should work when data arrives as a JSON string."""
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Original"}}))
-        data_str = json.dumps({"name": "Updated"})
+    def test_update_with_object_arg_as_json_string(self, mcp):
+        """update_* should parse object arguments that arrive as JSON strings."""
+        created = _run(_call_tool(mcp, "create_item", {"name": "Original"}))
+        detail_str = json.dumps({"nested": "value"})
         updated = _run(
             _call_tool(
                 mcp,
                 "update_item",
-                {"item_id": created["id"], "data": data_str},
+                {"item_id": created["id"], "name": "Updated", "detail": detail_str},
             )
         )
         assert updated["name"] == "Updated"
+        assert updated["detail"] == {"nested": "value"}
 
     def test_plain_string_args_not_mangled(self, mcp):
-        """Non-JSON string arguments (like item_id) must not be altered."""
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "Test"}}))
+        """Non-JSON string arguments (like item_id, name) must not be altered."""
+        created = _run(_call_tool(mcp, "create_item", {"name": "Test"}))
         fetched = _run(_call_tool(mcp, "get_item", {"item_id": created["id"]}))
         assert fetched["id"] == created["id"]
+        assert fetched["name"] == "Test"
 
-    def test_dict_args_still_work(self, mcp):
-        """Native dict arguments (normal in-process path) must keep working."""
-        created = _run(_call_tool(mcp, "create_item", {"data": {"name": "DictWidget"}}))
+    def test_native_dict_args_still_work(self, mcp):
+        """Native flat kwargs (normal in-process path) must keep working."""
+        created = _run(_call_tool(mcp, "create_item", {"name": "DictWidget"}))
         assert created["name"] == "DictWidget"
+
+
+class TestLegacyDataWrapperRejected:
+    """Regression: the pre-0.5.0 `{data: {...}}` shape is no longer part of the
+    contract. The canonical call shape is flat kwargs.
+
+    ``create_*`` tools enforce this naturally through JSON Schema validation —
+    a call with only a ``data`` key is missing every required entity field and
+    the client raises ``ToolError`` before reaching the server. ``update_*``
+    tools accept arbitrary fields by design (partial merge) so they do not
+    raise on stray keys; consistency there is carried by the published schema
+    and ``examples``, not by runtime rejection.
+    """
+
+    @pytest.fixture
+    def mcp(self, tmp_path):
+        manifest_path = _make_manifest(
+            tmp_path,
+            [{"name": "item", "plural": "items", "prefix": "it"}],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        return create_server(manifest_path, root=workspace)
+
+    def test_create_rejects_data_wrapper(self, mcp):
+        from fastmcp.exceptions import ToolError
+
+        with pytest.raises(ToolError):
+            _run(_call_tool(mcp, "create_item", {"data": {"name": "Wrapped"}}))
 
 
 # ===========================================================================
@@ -1114,7 +1202,7 @@ class TestAddFieldTool:
     def test_reload_works_new_entities_get_default(self, setup):
         mcp, _, _ = setup
         # Create entity before adding field
-        created = _run(_call_tool(mcp, "create_widget", {"data": {"name": "Test"}}))
+        created = _run(_call_tool(mcp, "create_widget", {"name": "Test"}))
 
         # Add field with default
         _run(
@@ -1320,16 +1408,14 @@ class TestRelationshipTools:
 
     def test_query_by_relationship_through_mcp(self, setup):
         mcp = setup
-        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme"}))
         _run(
             _call_tool(
                 mcp,
                 "create_contact",
                 {
-                    "data": {
-                        "name": "Alice",
-                        "relationships": [{"rel": "works_at", "target": company["id"]}],
-                    }
+                    "name": "Alice",
+                    "relationships": [{"rel": "works_at", "target": company["id"]}],
                 },
             )
         )
@@ -1346,16 +1432,14 @@ class TestRelationshipTools:
 
     def test_get_related_forward_through_mcp(self, setup):
         mcp = setup
-        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme"}))
         contact = _run(
             _call_tool(
                 mcp,
                 "create_contact",
                 {
-                    "data": {
-                        "name": "Alice",
-                        "relationships": [{"rel": "works_at", "target": company["id"]}],
-                    }
+                    "name": "Alice",
+                    "relationships": [{"rel": "works_at", "target": company["id"]}],
                 },
             )
         )
@@ -1372,16 +1456,14 @@ class TestRelationshipTools:
 
     def test_get_related_reverse_through_mcp(self, setup):
         mcp = setup
-        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme"}))
         contact = _run(
             _call_tool(
                 mcp,
                 "create_contact",
                 {
-                    "data": {
-                        "name": "Alice",
-                        "relationships": [{"rel": "works_at", "target": company["id"]}],
-                    }
+                    "name": "Alice",
+                    "relationships": [{"rel": "works_at", "target": company["id"]}],
                 },
             )
         )
@@ -1398,16 +1480,14 @@ class TestRelationshipTools:
 
     def test_get_composite_through_mcp(self, setup):
         mcp = setup
-        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme"}))
         contact = _run(
             _call_tool(
                 mcp,
                 "create_contact",
                 {
-                    "data": {
-                        "name": "Alice",
-                        "relationships": [{"rel": "works_at", "target": company["id"]}],
-                    }
+                    "name": "Alice",
+                    "relationships": [{"rel": "works_at", "target": company["id"]}],
                 },
             )
         )
@@ -1425,16 +1505,14 @@ class TestRelationshipTools:
 
     def test_rebuild_index_through_mcp(self, setup):
         mcp = setup
-        company = _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme"}}))
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme"}))
         _run(
             _call_tool(
                 mcp,
                 "create_contact",
                 {
-                    "data": {
-                        "name": "Alice",
-                        "relationships": [{"rel": "works_at", "target": company["id"]}],
-                    }
+                    "name": "Alice",
+                    "relationships": [{"rel": "works_at", "target": company["id"]}],
                 },
             )
         )
@@ -1506,9 +1584,7 @@ class TestActivityTools:
         assert "list_activities" not in tools
 
     def test_log_activity_creates_activity_with_relationship(self, mcp_with_activities):
-        contact = _run(
-            _call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Alice"}})
-        )
+        contact = _run(_call_tool(mcp_with_activities, "create_contact", {"name": "Alice"}))
         activity = _run(
             _call_tool(
                 mcp_with_activities,
@@ -1528,7 +1604,7 @@ class TestActivityTools:
         assert any(r["rel"] == "subject" and r["target"] == contact["id"] for r in rels)
 
     def test_log_activity_without_detail(self, mcp_with_activities):
-        contact = _run(_call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Bob"}}))
+        contact = _run(_call_tool(mcp_with_activities, "create_contact", {"name": "Bob"}))
         activity = _run(
             _call_tool(
                 mcp_with_activities,
@@ -1540,9 +1616,7 @@ class TestActivityTools:
         assert activity["detail"] == {}
 
     def test_get_activities_returns_activities_for_subject(self, mcp_with_activities):
-        contact = _run(
-            _call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Alice"}})
-        )
+        contact = _run(_call_tool(mcp_with_activities, "create_contact", {"name": "Alice"}))
         _run(
             _call_tool(
                 mcp_with_activities,
@@ -1570,9 +1644,7 @@ class TestActivityTools:
         assert actions == {"email_sent", "meeting_held"}
 
     def test_get_activities_filters_by_action(self, mcp_with_activities):
-        contact = _run(
-            _call_tool(mcp_with_activities, "create_contact", {"data": {"name": "Alice"}})
-        )
+        contact = _run(_call_tool(mcp_with_activities, "create_contact", {"name": "Alice"}))
         _run(
             _call_tool(
                 mcp_with_activities,
@@ -1617,7 +1689,7 @@ class TestToolListingFilter:
         assert "delete_session" not in listed
 
         # Hidden tools are still callable
-        result = _run(_call_tool(mcp, "create_session", {"data": {"name": "Test"}}))
+        result = _run(_call_tool(mcp, "create_session", {"name": "Test"}))
         assert "id" in result
 
     def test_tools_array_absent_lists_all(self, tmp_path):
@@ -1672,7 +1744,7 @@ class TestToolListingFilter:
         assert session_tools == set()
 
         # But tools are still callable
-        result = _run(_call_tool(mcp, "create_session", {"data": {"name": "Test"}}))
+        result = _run(_call_tool(mcp, "create_session", {"name": "Test"}))
         assert "id" in result
 
     def test_graph_traversal_categories(self, tmp_path):

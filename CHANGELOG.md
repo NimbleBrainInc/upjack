@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] - 2026-04-16
+
+### Changed
+- **Breaking:** Auto-generated `create_{name}` and `update_{name}` MCP tools now take flat kwargs at the top level. The `{data: {...}}` wrapper has been removed — pass entity fields directly, e.g. `create_deal({"title": "...", "amount": 1000, "stage": "qualified"})`. Mixing the old and new shapes in the same tool list was measurably confusing LLMs and driving ~30% tool-call failure rates on the auto-generated CRUD surface. The flat form matches the hand-written tool convention and the FastMCP idiom used elsewhere.
+- `delete_{name}` and `update_{name}` tool schemas now include a JSON Schema `examples` field with a minimal valid call so LLMs have an in-context anchor for the correct shape.
+
+### Fixed
+- `tools/list` no longer forces a network fetch of `https://upjack.dev/schemas/v1/upjack-entity.schema.json` when activities or any `allOf+$ref` schema is in play. The base-entity `$ref` is now inlined at schema-build time. This eliminates a ~4-second-per-call penalty that hit every activity-enabled app.
+
+### Added
+- `upjack.schema.inline_base_entity_ref()` — utility to inline the bundled base entity schema into any `$ref` pointing at its canonical URL.
+
 ## [0.3.1] - 2026-03-27
 
 ### Fixed

@@ -214,14 +214,51 @@ def validate_schema_change(
     return diagnostics
 
 
+_BASE_ENTITY_REF = "https://upjack.dev/schemas/v1/upjack-entity.schema.json"
+
+
+def inline_base_entity_ref(schema: dict[str, Any]) -> dict[str, Any]:
+    """Replace any ``$ref`` to the bundled base entity schema with its contents.
+
+    Published MCP tool schemas must be self-contained — leaving a remote
+    ``$ref`` forces clients (and FastMCP's own serializer) to dereference the
+    URL over the network, which is slow and fragile. This inlines the bundled
+    copy so the published schema is resolvable offline.
+
+    Operates on a deep copy — the input is not mutated.
+    """
+    result = copy.deepcopy(schema)
+    _inline_refs(result)
+    return result
+
+
+def _inline_refs(node: Any) -> None:
+    """Recursively replace $ref dicts pointing to the base entity schema."""
+    if isinstance(node, dict):
+        all_of = node.get("allOf")
+        if isinstance(all_of, list):
+            for i, sub in enumerate(all_of):
+                if isinstance(sub, dict) and sub.get("$ref") == _BASE_ENTITY_REF:
+                    inlined = copy.deepcopy(_BASE_SCHEMA)
+                    inlined.pop("$schema", None)
+                    inlined.pop("$id", None)
+                    all_of[i] = inlined
+        for value in node.values():
+            _inline_refs(value)
+    elif isinstance(node, list):
+        for item in node:
+            _inline_refs(item)
+
+
 def build_entity_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Build an output schema for a single-entity tool response.
 
     Returns the full entity schema (including base fields) with JSON Schema
-    meta keywords stripped, suitable for use as a tool's ``outputSchema``.
-    MCP requires ``type: "object"`` on every outputSchema.
+    meta keywords stripped and any ``$ref`` to the base entity schema inlined,
+    suitable for use as a tool's ``outputSchema``. MCP requires ``type:
+    "object"`` on every outputSchema.
     """
-    result = copy.deepcopy(schema)
+    result = inline_base_entity_ref(schema)
     result.pop("$schema", None)
     result.pop("$id", None)
     # MCP spec requires outputSchema to have type: "object"

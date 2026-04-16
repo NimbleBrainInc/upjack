@@ -461,9 +461,7 @@ class TestCrmServer:
             _call_tool(
                 mcp,
                 "create_contact",
-                {
-                    "data": {"first_name": "Sarah", "last_name": "Chen"},
-                },
+                {"first_name": "Sarah", "last_name": "Chen"},
             )
         )
         assert result["id"].startswith("ct_")
@@ -755,9 +753,7 @@ class TestTodoServer:
             _call_tool(
                 mcp,
                 "create_task",
-                {
-                    "data": {"title": "Buy groceries"},
-                },
+                {"title": "Buy groceries"},
             )
         )
         assert result["id"].startswith("tsk_")
@@ -813,7 +809,7 @@ class TestSchemaEvolutionCrm:
             _call_tool(
                 mcp,
                 "create_contact",
-                {"data": {"first_name": "Alice", "last_name": "Chen"}},
+                {"first_name": "Alice", "last_name": "Chen"},
             )
         )
 
@@ -844,7 +840,7 @@ class TestSchemaEvolutionCrm:
             _call_tool(
                 mcp,
                 "create_contact",
-                {"data": {"first_name": "Bob", "last_name": "Smith"}},
+                {"first_name": "Bob", "last_name": "Smith"},
             )
         )
 
@@ -871,7 +867,7 @@ class TestSchemaEvolutionCrm:
             _call_tool(
                 mcp,
                 "create_contact",
-                {"data": {"first_name": "Charlie", "last_name": "Davis"}},
+                {"first_name": "Charlie", "last_name": "Davis"},
             )
         )
 
@@ -912,7 +908,7 @@ class TestSchemaEvolutionTodo:
             _call_tool(
                 mcp,
                 "create_task",
-                {"data": {"title": "Write tests"}},
+                {"title": "Write tests"},
             )
         )
 
@@ -954,7 +950,7 @@ class TestSchemaEvolutionResearch:
             _call_tool(
                 mcp,
                 "create_topic",
-                {"data": {"title": "AI Safety"}},
+                {"title": "AI Safety"},
             )
         )
 
@@ -1097,19 +1093,15 @@ class TestCrmRelationshipServer:
         return create_server(app_dir / "manifest.json", root=workspace)
 
     def test_query_deals_by_relationship_tool(self, mcp):
-        company = _run(
-            _call_tool(mcp, "create_company", {"data": {"name": "Acme", "industry": "Tech"}})
-        )
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme", "industry": "Tech"}))
         deal = _run(
             _call_tool(
                 mcp,
                 "create_deal",
                 {
-                    "data": {
-                        "title": "Big Deal",
-                        "stage": "new",
-                        "relationships": [{"rel": "company", "target": company["id"]}],
-                    }
+                    "title": "Big Deal",
+                    "stage": "new",
+                    "relationships": [{"rel": "company", "target": company["id"]}],
                 },
             )
         )
@@ -1125,19 +1117,15 @@ class TestCrmRelationshipServer:
         assert result["entities"][0]["id"] == deal["id"]
 
     def test_get_deal_composite_tool(self, mcp):
-        company = _run(
-            _call_tool(mcp, "create_company", {"data": {"name": "Acme", "industry": "Tech"}})
-        )
+        company = _run(_call_tool(mcp, "create_company", {"name": "Acme", "industry": "Tech"}))
         contact = _run(
             _call_tool(
                 mcp,
                 "create_contact",
                 {
-                    "data": {
-                        "first_name": "Sarah",
-                        "last_name": "Chen",
-                        "relationships": [{"rel": "works_at", "target": company["id"]}],
-                    }
+                    "first_name": "Sarah",
+                    "last_name": "Chen",
+                    "relationships": [{"rel": "works_at", "target": company["id"]}],
                 },
             )
         )
@@ -1146,15 +1134,13 @@ class TestCrmRelationshipServer:
                 mcp,
                 "create_deal",
                 {
-                    "data": {
-                        "title": "Agent Platform",
-                        "stage": "qualification",
-                        "value": 48000,
-                        "relationships": [
-                            {"rel": "primary_contact", "target": contact["id"]},
-                            {"rel": "company", "target": company["id"]},
-                        ],
-                    }
+                    "title": "Agent Platform",
+                    "stage": "qualification",
+                    "value": 48000,
+                    "relationships": [
+                        {"rel": "primary_contact", "target": contact["id"]},
+                        {"rel": "company", "target": company["id"]},
+                    ],
                 },
             )
         )
@@ -1164,7 +1150,7 @@ class TestCrmRelationshipServer:
         assert "company" in result["_related"]
 
     def test_rebuild_index_tool(self, mcp):
-        _run(_call_tool(mcp, "create_company", {"data": {"name": "Acme", "industry": "Tech"}}))
+        _run(_call_tool(mcp, "create_company", {"name": "Acme", "industry": "Tech"}))
         result = _run(_call_tool(mcp, "rebuild_index", {}))
         assert result["success"] is True
 
