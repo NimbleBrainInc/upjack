@@ -7,6 +7,8 @@ from jsonschema import ValidationError
 
 from upjack.entity import (
     Entity,
+    EntityLockTimeout,
+    _entity_lock,
     create_entity,
     delete_entity,
     get_entity,
@@ -1111,3 +1113,148 @@ class TestRelationshipCallbacks:
             on_relationships_changed=lambda eid, old, new: calls.append((eid, old, new)),
         )
         assert len(calls) == 0
+
+
+class TestConcurrentUpdates:
+    """Regression: parallel updates to the same entity must serialize.
+
+    Observed in production when an agent parallelized two tool calls on
+    the same deal (``move_deal_stage`` + ``update_deal``). Both read the
+    same pre-state, each wrote a partial update, and the second writer
+    silently clobbered the first's fields — the on-disk state was
+    self-consistent but the reported tool responses lied about the prior
+    state. The fix serializes read-modify-write via a sidecar flock.
+    """
+
+    def test_parallel_updates_do_not_clobber_distinct_fields(self, tmp_workspace):
+        """Two threads update different fields on the same entity. Both
+        updates must land: the final state shows both writer's changes.
+        Without the lock, one thread's read-before-write sees the
+        pre-state, computes its update, and writes — overwriting the
+        other thread's committed change.
+        """
+        import threading
+
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="deal",
+            plural="deals",
+            prefix="dl",
+            data={"title": "Race", "stage": "proposal", "value": 10000},
+        )
+        deal_id = created["id"]
+
+        barrier = threading.Barrier(2)
+
+        def update_stage():
+            barrier.wait()
+            update_entity(
+                root=tmp_workspace,
+                namespace=NAMESPACE,
+                plural="deals",
+                entity_id=deal_id,
+                data={"stage": "negotiation"},
+            )
+
+        def update_value():
+            barrier.wait()
+            update_entity(
+                root=tmp_workspace,
+                namespace=NAMESPACE,
+                plural="deals",
+                entity_id=deal_id,
+                data={"value": 15000},
+            )
+
+        # Run both updates concurrently. The barrier releases them at
+        # the same instant to maximize the race window.
+        for _ in range(20):  # amplify — single runs might not race
+            # Reset to known state each iteration
+            update_entity(
+                root=tmp_workspace,
+                namespace=NAMESPACE,
+                plural="deals",
+                entity_id=deal_id,
+                data={"stage": "proposal", "value": 10000},
+            )
+            t1 = threading.Thread(target=update_stage)
+            t2 = threading.Thread(target=update_value)
+            barrier.reset()
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+            final = get_entity(
+                root=tmp_workspace,
+                namespace=NAMESPACE,
+                plural="deals",
+                entity_id=deal_id,
+            )
+            # Both updates must be present in the final state — whichever
+            # order they ran, neither should have been silently lost.
+            assert final["stage"] == "negotiation", f"stage write lost: {final}"
+            assert final["value"] == 15000, f"value write lost: {final}"
+
+    def test_lock_times_out_if_never_released(self, tmp_workspace):
+        """A stuck holder must not wedge the server indefinitely. The
+        lock raises EntityLockTimeout after the bound, so the tool call
+        fails cleanly instead of hanging forever.
+        """
+        import threading
+
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="deal",
+            plural="deals",
+            prefix="dl",
+            data={"title": "Stuck"},
+        )
+        path = tmp_workspace / NAMESPACE / "data" / "deals" / f"{created['id']}.json"
+
+        holder_entered = threading.Event()
+        holder_release = threading.Event()
+
+        def hold_forever():
+            with _entity_lock(path):
+                holder_entered.set()
+                holder_release.wait(timeout=5.0)
+
+        holder = threading.Thread(target=hold_forever)
+        holder.start()
+        holder_entered.wait(timeout=2.0)
+
+        try:
+            # Aggressive short timeout so the test is fast. In prod
+            # we use 30s; the constant is overridable via the function
+            # signature.
+            with pytest.raises(EntityLockTimeout):
+                with _entity_lock(path, timeout=0.2):
+                    pass
+        finally:
+            holder_release.set()
+            holder.join(timeout=5.0)
+
+    def test_lock_is_reentrant_on_same_thread(self, tmp_workspace):
+        """Re-entering the same entity's lock on the same thread must
+        not deadlock. Without the thread-local guard, a caller that
+        nests update_entity inside another lock would hang forever.
+        """
+        created = create_entity(
+            root=tmp_workspace,
+            namespace=NAMESPACE,
+            entity_type="deal",
+            plural="deals",
+            prefix="dl",
+            data={"title": "Reentrant"},
+        )
+        path = tmp_workspace / NAMESPACE / "data" / "deals" / f"{created['id']}.json"
+
+        # Nested — outer lock held, inner lock acquired for the same
+        # entity. Must return immediately without blocking.
+        with _entity_lock(path):
+            with _entity_lock(path, timeout=0.5):
+                # If this deadlocked, the pytest-level timeout would fire.
+                pass
