@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.2] - 2026-04-17 (Python only — interim fix)
+
+This is a tactical patch. The proper architectural fix — versioned optimistic concurrency via the existing `version` field, symmetric across Python and TypeScript SDKs — is tracked in [#26](https://github.com/NimbleBrainInc/upjack/issues/26) and will ship as 0.6.0.
+
+### Fixed
+- `update_entity` and `delete_entity` now serialize concurrent access via an advisory `flock` on a sidecar `.lock` file. Previously, two tool calls targeting the same entity in parallel (e.g. an agent invoking `update_deal` and `move_deal_stage` on the same deal) would each read the same pre-state, compute their update, and write sequentially — silently clobbering the other's fields. Observed in production as tool responses returning wrong `previous_stage` values. The final on-disk state was usually consistent (last writer wins), but the intermediate responses lied.
+
+### Added
+- `EntityLockTimeout` (exported from `upjack.entity`) — raised if a lock cannot be acquired within 30 seconds. Guards against a stuck-but-alive writer wedging the whole tool server.
+- Lock is reentrant on the same thread (thread-local tracking of held paths) so future callers that nest `update_entity` from within another locked section don't deadlock.
+
+### Known limitations
+- **Windows**: `fcntl` is unavailable, so the lock is a no-op there. Concurrent updates remain unsafe on Windows, but no worse than 0.5.1.
+- **TypeScript SDK**: unchanged at 0.5.1 — the analogous race is latent (Node's sync I/O accidentally serializes today) but not fixed by design. Resolved together with Python in 0.6.0 via the versioned-CAS design in [#26](https://github.com/NimbleBrainInc/upjack/issues/26).
+- **Cross-machine / networked filesystems**: flock semantics on NFS and similar are implementation-defined. 0.6.0's CAS approach does not have this caveat.
+
 ## [0.5.1] - 2026-04-16
 
 Applies to both the Python and TypeScript libraries. The tool contract is now identical across both SDKs.
