@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/nimblebraininc-upjack-badge.png)](https://mseep.ai/app/nimblebraininc-upjack)
+
 <p align="center">
   <img src="website/public/readme-banner.png" alt="Upjack — Declarative AI-native apps. Kill your boilerplate." width="100%" />
 </p>
